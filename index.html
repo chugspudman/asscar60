@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ASSCAR60</title>
+  <link rel="stylesheet" href="/styles.css?v=draft-vote-badge-20260718a">
+</head>
+<body>
+  <section id="auth-view" class="auth-view">
+    <div class="auth-card">
+      <span class="eyebrow">League access</span>
+      <h1 class="auth-title">Welcome to <span class="auth-title-lockup"><span class="auth-title-stripes" aria-hidden="true"><i></i><i></i><i></i></span><span class="auth-title-wordmark">ASSCAR60</span></span></h1>
+      <div class="auth-mode-switch" role="tablist" aria-label="Manager account actions">
+        <button id="show-login" type="button" class="auth-mode-button active" aria-selected="true">Login</button>
+        <button id="show-register" type="button" class="auth-mode-button" aria-selected="false">Register</button>
+      </div>
+      <form id="login-form" class="auth-form">
+        <label>Username
+          <input id="login-username" name="username" autocomplete="username" required>
+        </label>
+        <label>Password
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="primary-button">Login</button>
+      </form>
+      <form id="register-form" class="auth-form" hidden>
+        <label>Username
+          <input id="register-username" name="username" autocomplete="username" required>
+        </label>
+        <label>Password
+          <input id="register-password" name="password" autocomplete="new-password" required>
+        </label>
+        <label>League code
+          <input id="league-code" name="leagueCode" autocomplete="off" required>
+        </label>
+        <button type="submit" class="primary-button">Register</button>
+      </form>
+      <p id="auth-message" class="auth-message" role="status"></p>
+    </div>
+  </section>
+
+  <header class="site-header" hidden>
+    <span class="brand-stripes" aria-hidden="true">
+      <i></i><i></i><i></i>
+    </span>
+    <a class="brand" href="#" aria-label="ASSCAR60 home">
+      <span class="brand-emblem" aria-hidden="true">
+        <span class="brand-mark">
+          <span class="brand-monogram"><b>AC</b><b>60</b></span>
+        </span>
+      </span>
+      <span class="brand-copy" hidden><strong>ASSCAR60</strong><small id="season-label">Season 1 / Week 1</small></span>
+    </a>
+    <div class="news-ticker" aria-live="polite">
+      <span id="news-ticker-text">League loading...</span>
+    </div>
+    <nav aria-label="Primary navigation">
+      <button class="nav-link active" data-section="race">Race</button>
+      <button class="nav-link" data-section="garage">Garage</button>
+      <button class="nav-link" data-section="office">Office</button>
+      <button class="nav-link" data-section="league">League</button>
+    </nav>
+    <div class="status-pill"><span></span> League online</div>
+  </header>
+  <div class="subnav-shell" hidden>
+    <div class="subnav-inner">
+      <nav id="subnav" class="subnav" aria-label="Section navigation"></nav>
+      <div class="app-menu-shell">
+        <button id="app-menu-button" type="button" class="app-menu-button" aria-label="Open site menu" aria-expanded="false" aria-controls="app-menu">
+          <span></span><span></span><span></span>
+        </button>
+        <div id="app-menu" class="app-menu" hidden>
+          <button id="open-rules" type="button">Rules</button>
+          <button id="open-media" type="button">Media</button>
+          <a id="open-wiki" href="https://thebrosmos.fandom.com/wiki/Category:Formula_D" target="_blank" rel="noopener noreferrer">Wiki</a>
+          <button id="menu-logout" type="button">Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main hidden>
+    <section id="rules-view" class="rules-page" hidden>
+      <section class="panel rules-panel">
+        <div class="section-heading">
+          <div><span class="eyebrow">League reference</span><h2>Rules and Information</h2></div>
+          <button id="close-rules" type="button" class="secondary-button">Back to league</button>
+        </div>
+        <div class="rules-copy">
+          <section>
+            <h3>Intro</h3>
+            <p>The world of ASSCAR we all know and love, but like fantasy football. I imagine the other ASSCAR league is still going on in the world, and ASSCAR60 is another form of the sport altogether. Like NASCAR and F1.</p>
+          </section>
+
+          <section>
+            <h3>Overall Structure</h3>
+            <p>Each season is 1 month long of real-time. There are 20 races in a season, one per weekday, and they occur at 8PM eastern. Qualifiers take place 10 minutes before the race. Each race is 60 laps.</p>
+            <p>Each manager controls 1 team, with a roster between 8 and 10 drivers. Each team fields two cars per race. The races are relays, and each car must have 3 drivers across the course of the race. Drivers cannot switch cars during a race, but their car assignment and relay position can be changed outside of the race.</p>
+            <p>The driver who begins the race is the Opener, the one who finishes the race is the Closer, and the Bridge is between them. The minimum number of laps allowed for a driver's stint is 5, and the maximum is 40, meaning different drivers can be racing for different lengths of time as determined by the manager.</p>
+            <p>Managers will manage their team by drafting drivers, setting relay plans, completing driver trades with other managers, and selecting weekly driver trainings and car upgrades.</p>
+          </section>
+
+          <section>
+            <h3>Drafts</h3>
+            <p>There is an opening draft before each season, followed by a vote for the Initiation Martyr for that season. Then, between races 10 and 11 there is a rookie draft.</p>
+            <h4>Opening Draft</h4>
+            <p>For every season except the first, a team's roster will be entirely cleared and all drivers will once again be eligible for draft. Then, new drivers will be generated and added to the pool for a total of 60 drivers. Free agents from previous seasons are relegated to lower leagues.</p>
+            <p>The draft proceeds in reverse-standings snake order, and the managers will each pick drivers to sign over the course of 8 rounds, for a total of 48 signed drivers by the end. The remaining 12 drivers will then be eligible candidates for the Initiation Martyr of that season. Whoever is picked is martyred, and the remaining 11 drivers become Free Agents.</p>
+            <h4>Rookie Draft</h4>
+            <p>Between races 10 and 11 there is a rookie draft. 24 rookie drivers are generated, and generally have worse stats but higher potential than opening draft drivers.</p>
+            <p>The draft proceeds in reverse-standings snake order for two rounds, for a total of 12 newly signed rookie drivers by the end. The remaining 12 rookies become free agents. Then, each team must choose a driver to release from their roster to free agency, for a final total of 9 drivers on each team.</p>
+          </section>
+
+          <section>
+            <h3>Qualifiers</h3>
+            <p>10 minutes before each race, qualifiers are run. Each car for each team runs 3 laps during the qualifiers. The first lap is done by the car's assigned Opener, the second lap by the assigned Bridge, and the third lap by the assigned Closer.</p>
+            <p>The fastest car will be put in pole position and have no time penalty assigned to their first lap. The second fastest car will be put in the 2nd position and will have a penalty of 0.2 seconds added to their first lap. Third will have a penalty of 0.4, and so on to 12th place with a penalty of 2.2 seconds.</p>
+            <p>These time penalties are only added to the cars' first laps. The results of the qualifiers are posted in the Race Feed and the Running Order is updated accordingly before the race begins.</p>
+          </section>
+
+          <section>
+            <h3>Stats</h3>
+            <h4>Driver Stats</h4>
+            <dl class="rules-stat-list">
+              <dt>Pace</dt><dd>The driver's raw lap-speed ability. Higher Pace lowers normal lap time, especially on the overall course length portion.</dd>
+              <dt>Control</dt><dd>The driver's ability to handle turns and chicanes cleanly. Higher Control reduces mishap risk and softens the time cost of technical course sections.</dd>
+              <dt>Overtaking</dt><dd>The driver's passing and defending skill. Higher Overtaking helps a driver win overtake attempts and also deny attempts from other drivers.</dd>
+              <dt>Stamina</dt><dd>How well the driver maintains performance over a stint. Higher Stamina slows the degradation of Control and Overtaking as the driver stays in the car.</dd>
+              <dt>Technical</dt><dd>How well the driver manages the car. Higher Technical helps reduce the car's Speed and Handling degradation during that driver's stint.</dd>
+              <dt>Weird</dt><dd>The driver's connection to strange race events. Higher Weird increases the chance of miraculous/anomalous effects happening around them.</dd>
+              <dt>Potential</dt><dd>How much additional room the driver has for growth. Will decrease as they undergo additional training.</dd>
+            </dl>
+
+            <h4>Car Stats</h4>
+            <dl class="rules-stat-list">
+              <dt>Speed</dt><dd>The car's raw straight-line performance. Higher Speed lowers baseline lap time alongside driver Pace.</dd>
+              <dt>Handling</dt><dd>The car's ability to survive turns and chicanes cleanly. Higher Handling reduces mishap risk and helps with technical course-section time costs.</dd>
+              <dt>Durability</dt><dd>How well the car holds together over the race. Higher Durability slows the degradation of Speed and Handling across laps.</dd>
+              <dt>Feedback</dt><dd>How well the car communicates with the driver. Higher Feedback helps reduce the driver's Control and Overtaking degradation during a stint.</dd>
+              <dt>Weird</dt><dd>The car's own strange-event affinity. It stacks with driver Weird to increase the chance of anomalous effects.</dd>
+            </dl>
+
+            <h4>How They Interact</h4>
+            <ul>
+              <li>Driver Pace and car Speed combine to make the basic lap faster.</li>
+              <li>Driver Control and car Handling combine to handle turns and chicanes, lowering mishap risk and reducing time lost through difficult sections.</li>
+              <li>Driver Overtaking determines both attacking and defending during pass attempts.</li>
+              <li>Driver Stamina protects driver skills from fading during a stint, while car Feedback helps with that protection.</li>
+              <li>Car Durability protects car stats from fading during the race, while driver Technical helps with that protection.</li>
+              <li>Driver Weird plus car Weird together determine how likely strange effects are to happen.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Trainings and Upgrades</h3>
+            <p>Each week, every manager will be given the same randomized set of 3 choices of trainings and upgrades to choose from. Trainings are for drivers, and upgrades are for cars. Car stats do not have a cap, but each driver stat does. These caps are hidden, and can only be discovered by training.</p>
+            <p>Every time a driver undergoes training, their Potential decreases by 1 unless a cap was discovered. When a stat cap is discovered it is publicly recorded on that driver's racer card with a small triangle in the top left corner of that stat tile.</p>
+            <p>The only drivers eligible for a given week's training are the ones who participated in at least 1 race that week. If a training or upgrade is not used during the week, it does not carry over to the following week for later use.</p>
+            <p>While stats can temporarily degrade during a race for both drivers and cars, those degradations completely resolve between races and are not permanent.</p>
+          </section>
+
+          <section>
+            <h3>Courses</h3>
+            <p>There are 4 courses in the league: Race City, New Torque City, Acceleton, and Suzuka. Each has length, straights, turns, chicanes, and chances for the types of weather conditions.</p>
+            <p>Length determines the base lap time. Straights are where overtakes are allowed to occur. Turns and chicanes are each given a severity rating from 1-5, with likelihood for mishaps increasing respectively.</p>
+          </section>
+
+          <section>
+            <h3>Weather Conditions</h3>
+            <dl class="rules-stat-list">
+              <dt>Sunny</dt><dd>No added mishap risk. This is the baseline condition.</dd>
+              <dt>Rain</dt><dd>Slightly increases mishap chance in turns and chicanes. Drivers/cars with better Control and Handling resist this better.</dd>
+              <dt>Snow</dt><dd>Moderately increases mishap chance in turns and chicanes. Again, Control and Handling help offset this.</dd>
+              <dt>Churn</dt><dd>An arcane, esoteric roiling of reality. Does not increase the general chance of mishaps or strange events. Instead, when strange effects do happen, Churn allows special, more severe Churning-only effects to occur.</dd>
+            </dl>
+          </section>
+
+          <section>
+            <h3>Championship and MVD</h3>
+            <h4>Team Championship</h4>
+            <p>Each car is awarded points based on the position it finishes a race in. A team scores points for both of its cars. At the end of the 20th race, all teams' points are tallied and the team with the highest number is declared the champion of that season. The opening draft for the following season is done in reverse-standings order.</p>
+            <div class="rules-points-grid">
+              <span>1st: 25</span><span>2nd: 18</span><span>3rd: 15</span><span>4th: 12</span>
+              <span>5th: 10</span><span>6th: 8</span><span>7th: 6</span><span>8th: 4</span>
+              <span>9th: 2</span><span>10th: 1</span><span>11th: 0</span><span>12th: 0</span>
+              <span>DNF: 0</span>
+            </div>
+
+            <h4>Most Valuable Driver</h4>
+            <p>Each driver is assigned a proportional share of their cars' points at the end of each race based on how long they drove during it. The Opener is then given an extra 0.01 points, and the Closer is given an extra 0.02 points.</p>
+            <p>At the end of the 20th race, the league's Most Valuable Driver (MVD) is calculated by tallying each driver's points from across the season. This can sometimes result in a tie. There is no mechanical advantage to winning this.</p>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section id="media-view" class="rules-page media-page" hidden>
+      <section class="panel rules-panel media-panel">
+        <div class="section-heading">
+          <div><span class="eyebrow">League media</span><h2>Media</h2></div>
+        </div>
+        <div class="media-toolbar">
+          <button id="add-media-entry" type="button" class="primary-button media-add-button"><span aria-hidden="true">+</span> Add Entry</button>
+        </div>
+        <div id="media-list" class="media-list"></div>
+      </section>
+    </section>
+
+    <section id="race-status-banner" class="race-status-banner">
+      <strong id="race-banner-title">Next Race: Race City / Week 1 / Monday</strong>
+      <span id="race-banner-condition">Forecast: Sunny</span>
+    </section>
+
+    <section id="race-view" class="view active" data-section-view="race">
+      <div class="race-toolbar panel">
+        <div class="race-clock-block">
+          <span id="race-title" class="race-title">Race City, Week 1, Race 1 of 20</span>
+          <span class="card-label">Race clock</span>
+          <strong id="race-clock">00:00</strong>
+          <button id="race-button" class="primary-button race-status-button">Loading race state</button>
+        </div>
+        <div class="race-leader-block" hidden><span class="card-label">Leader</span><strong id="race-leader">Awaiting start</strong></div>
+        <div class="race-playback-control" hidden>
+          <label class="card-label" for="speed-control">Playback</label>
+          <select id="speed-control">
+            <option value="1">Live 1x</option>
+            <option value="10">10x</option>
+            <option value="60" selected>60x demo</option>
+            <option value="240">240x test</option>
+          </select>
+        </div>
+        <div class="race-podium-block">
+          <span class="card-label">Podium</span>
+          <div id="race-podium" class="race-podium" aria-label="Race podium"></div>
+        </div>
+      </div>
+
+      <section class="panel race-progress-panel" aria-label="Lap progress">
+        <div class="race-progress-heading">
+          <span class="card-label">Lap progress</span>
+          <span id="race-progress-label">Awaiting grid</span>
+        </div>
+        <div id="race-progress-track" class="race-progress-track"></div>
+      </section>
+
+      <div class="race-layout">
+        <section class="panel standings-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Live timing</span><h2>Running order</h2></div>
+            <span id="lap-indicator">Formation lap</span>
+          </div>
+          <div class="standings-header">
+            <span>Pos</span><span>Car</span><span>Driver</span><span>Lap</span><span>Last lap time</span>
+          </div>
+          <div id="standings" class="standings"></div>
+        </section>
+
+        <aside class="panel feed-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Course radio</span><h2>Race feed</h2></div>
+            <span class="live-tag">Live</span>
+          </div>
+          <div id="race-feed" class="race-feed">
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="course-view" class="view" data-section-view="race">
+      <div class="section-heading archive-heading">
+        <div>
+          <span class="eyebrow">Season circuit schedule</span>
+          <h2>Courses</h2>
+        </div>
+        <span>One course per week</span>
+      </div>
+      <div id="course-list" class="course-list"></div>
+    </section>
+
+    <section id="archive-view" class="view" data-section-view="race">
+      <div class="section-heading archive-heading">
+        <div>
+          <span class="eyebrow">Permanent league record</span>
+          <h2>Race archive</h2>
+        </div>
+        <span id="archive-season-label">Season 1 / Week 1</span>
+      </div>
+      <div class="archive-layout single">
+        <section class="panel archive-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Completed events</span><h2>Race history</h2></div>
+          </div>
+          <div id="race-history"></div>
+        </section>
+        <section id="race-review-panel" class="panel race-review-panel" hidden>
+          <div class="section-heading">
+            <div><span class="eyebrow">Race review</span><h2 id="race-review-title">Race review</h2></div>
+          </div>
+          <section class="race-recap">
+            <span class="card-label">Race recap</span>
+            <div id="race-review-recap"></div>
+          </section>
+          <div class="race-review-layout">
+            <section class="race-review-standings-section">
+              <span class="card-label">Final running order</span>
+              <div class="standings-header">
+                <span>Pos</span><span>Car</span><span>Driver</span><span>Lap</span><span>Last lap time</span>
+              </div>
+              <div id="race-review-standings" class="standings"></div>
+              <section class="race-review-relay-section">
+                <span class="card-label">Relay plans used</span>
+                <div id="race-review-relay" class="race-review-relay"></div>
+              </section>
+            </section>
+            <aside>
+              <span class="card-label">Full race feed</span>
+              <div id="race-review-feed" class="race-feed race-review-feed"></div>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="relay-view" class="view" data-section-view="garage">
+      <section class="panel lineup-panel garage-single-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Race plan</span><h2>Relay lineup</h2></div>
+            <span>5-40 laps per stint</span>
+          </div>
+          <p class="muted">Choose three racers and their stint lengths for each car. Saving sets this as the team's default plan until changed.</p>
+          <div id="lineup-editor"></div>
+          <button id="save-lineup" class="primary-button full">Save Plan</button>
+          <p id="save-message" class="save-message" role="status"></p>
+      </section>
+    </section>
+
+    <section id="roster-view" class="view" data-section-view="garage">
+      <div id="team-profile"></div>
+    </section>
+
+    <section id="cars-view" class="view" data-section-view="garage">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Registered machines</span><h2>Your cars</h2></div>
+      </div>
+      <div id="garage-cars" class="garage-cars"></div>
+    </section>
+
+    <section id="league-view" class="view" data-section-view="league">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Six strange institutions</span><h2>The league</h2></div>
+        <span>All teams human-controlled</span>
+      </div>
+      <div id="team-grid" class="team-grid"></div>
+    </section>
+
+    <section id="signed-view" class="view" data-section-view="league">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Under contract</span><h2>Signed racers</h2></div>
+        <label class="draft-sort">Sort
+          <select id="signed-racer-sort">
+            <option value="name">Name</option>
+            <option value="pace">Pace</option>
+            <option value="control">Control</option>
+            <option value="overtaking">Overtaking</option>
+            <option value="stamina">Stamina</option>
+            <option value="technical">Technical</option>
+            <option value="weird">Weird</option>
+            <option value="potential">Potential</option>
+          </select>
+        </label>
+      </div>
+      <div id="signed-racers" class="racer-directory"></div>
+    </section>
+
+    <section id="free-agents-view" class="view" data-section-view="league">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Available talent</span><h2>Free agents</h2></div>
+        <label class="draft-sort">Sort
+          <select id="free-agent-racer-sort">
+            <option value="name">Name</option>
+            <option value="pace">Pace</option>
+            <option value="control">Control</option>
+            <option value="overtaking">Overtaking</option>
+            <option value="stamina">Stamina</option>
+            <option value="technical">Technical</option>
+            <option value="weird">Weird</option>
+            <option value="potential">Potential</option>
+          </select>
+        </label>
+      </div>
+      <div id="free-agent-racers" class="racer-directory"></div>
+    </section>
+
+    <section id="memoriam-view" class="view" data-section-view="league">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Gone from the grid</span><h2>In Memoriam</h2></div>
+      </div>
+      <div id="memoriam-list" class="memoriam-list"></div>
+    </section>
+
+    <section id="standings-view" class="view" data-section-view="league">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Season honors</span><h2 id="standings-season-label">Season 1 standings</h2></div>
+      </div>
+      <section id="season-champions" class="season-champions panel" hidden></section>
+      <div class="championship-grid">
+        <section class="panel championship-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Both cars score</span><h2>Team championship</h2></div>
+          </div>
+          <div id="championship-standings"></div>
+        </section>
+        <section class="panel championship-panel mvd-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Season's finest</span><h2>MVD - Most Valuable Driver</h2></div>
+          </div>
+          <div id="mvd-standings"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="draft-view" class="view" data-section-view="office">
+      <div id="draft-empty" class="panel draft-empty">
+        <p class="eyebrow">Preseason procedure</p>
+        <h2>Opening Draft</h2>
+        <p>Initiate the season and begin the opening draft. The draft begins after all six teams vote with the league code.</p>
+        <div id="draft-retention-fields" class="draft-retention-fields" hidden>
+          <h3>Pick 1 veteran and 1 rookie to retain into the next season</h3>
+          <label class="draft-retention-field">Veteran
+            <select id="draft-retain-veteran"></select>
+          </label>
+          <label class="draft-retention-field">Rookie
+            <select id="draft-retain-rookie"></select>
+          </label>
+        </div>
+        <label class="draft-initiation-code">League code
+          <input id="draft-initiation-code" autocomplete="off">
+        </label>
+        <button id="start-draft" class="primary-button">Vote to initiate the season and begin the opening draft</button>
+        <p id="draft-initiation-progress" class="save-message" role="status"></p>
+      </div>
+      <div id="draft-room" hidden>
+        <div id="draft-status" class="draft-status panel">
+          <div>
+            <span class="card-label">On the clock</span>
+            <strong id="draft-team">Awaiting draft</strong>
+          </div>
+          <div>
+            <span class="card-label">Selection</span>
+            <strong id="draft-pick">Pick 1 / Round 1</strong>
+          </div>
+          <div>
+            <span class="card-label">Available racers</span>
+            <strong id="draft-available">0</strong>
+          </div>
+          <p id="draft-message" class="save-message" role="status"></p>
+        </div>
+        <div id="draft-layout" class="draft-layout">
+          <section id="draft-pool-panel" class="panel draft-pool-panel">
+            <div class="section-heading">
+              <div><span class="eyebrow">Scouting board</span><h2>Draft class</h2></div>
+              <label class="draft-sort">Sort
+                <select id="draft-sort">
+                  <option value="name">Name</option>
+                  <option value="pace">Pace</option>
+                  <option value="control">Control</option>
+                  <option value="overtaking">Overtaking</option>
+                  <option value="stamina">Stamina</option>
+                  <option value="technical">Technical</option>
+                  <option value="weird">Weird</option>
+                  <option value="potential">Potential</option>
+                </select>
+              </label>
+            </div>
+            <div id="draft-pool" class="draft-pool"></div>
+          </section>
+          <aside class="panel draft-history-panel">
+            <div class="section-heading">
+              <div><span class="eyebrow">Official record</span><h2 id="draft-history-title">Pick history</h2></div>
+            </div>
+            <div id="draft-history" class="draft-history"></div>
+          </aside>
+        </div>
+      </div>
+      <div id="rookie-draft-room" class="rookie-draft-room panel" hidden>
+        <div id="rookie-draft-heading" class="section-heading">
+          <div>
+            <span class="eyebrow">Race 10 procedure</span>
+            <h2>Midseason Rookie Draft</h2>
+          </div>
+          <span id="rookie-draft-clock">12:00:00 remaining</span>
+        </div>
+        <div id="rookie-draft-initiation" class="draft-empty rookie-draft-initiation">
+          <p class="eyebrow">Manager vote</p>
+          <h3>Vote to begin the rookie draft</h3>
+          <p>The rookie class has been generated. The draft begins after all six teams vote with the league code.</p>
+          <label class="draft-initiation-code">League code
+            <input id="rookie-draft-initiation-code" autocomplete="off">
+          </label>
+          <button id="start-rookie-draft" class="primary-button">Vote to begin the rookie draft</button>
+          <p id="rookie-draft-initiation-progress" class="save-message" role="status"></p>
+        </div>
+        <div id="rookie-draft-status" class="draft-status rookie-draft-status">
+          <div>
+            <span class="card-label">On the clock</span>
+            <strong id="rookie-draft-team">Awaiting Race 10</strong>
+          </div>
+          <div>
+            <span class="card-label">Selection</span>
+            <strong id="rookie-draft-pick">Pick 1 / Round 1</strong>
+          </div>
+          <div>
+            <span class="card-label">Available rookies</span>
+            <strong id="rookie-draft-available">24</strong>
+          </div>
+          <p id="rookie-draft-message" class="save-message" role="status"></p>
+        </div>
+        <div id="rookie-release-panel" class="rookie-release-panel" hidden>
+          <div class="section-heading">
+            <div><span class="eyebrow">Roster compliance</span><h3>Select a driver to release to free agency</h3></div>
+          </div>
+          <p id="rookie-release-team" class="muted"></p>
+          <label class="move-field">Release
+            <select id="rookie-release-racer"></select>
+          </label>
+          <button id="submit-rookie-release" class="primary-button">Release racer</button>
+        </div>
+        <div id="rookie-draft-layout" class="draft-layout">
+          <section id="rookie-draft-pool-panel" class="draft-pool-panel">
+            <div class="section-heading">
+              <div><span class="eyebrow">Twenty-four prospects</span><h3>Rookie class</h3></div>
+              <label class="draft-sort">Sort
+                <select id="rookie-draft-sort">
+                  <option value="name">Name</option>
+                  <option value="pace">Pace</option>
+                  <option value="control">Control</option>
+                  <option value="overtaking">Overtaking</option>
+                  <option value="stamina">Stamina</option>
+                  <option value="technical">Technical</option>
+                  <option value="weird">Weird</option>
+                  <option value="potential">Potential</option>
+                </select>
+              </label>
+            </div>
+            <div id="rookie-draft-pool" class="draft-pool"></div>
+          </section>
+          <aside class="draft-history-panel">
+            <div class="section-heading">
+              <div><span class="eyebrow">Two-round snake</span><h2 id="rookie-draft-history-title">Rookie picks</h2></div>
+            </div>
+            <div id="rookie-draft-history" class="draft-history"></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="brand-view" class="view" data-section-view="office">
+      <div class="brand-toolbar panel">
+        <div>
+          <span class="card-label">Your team</span>
+          <strong id="brand-team"></strong>
+        </div>
+        <p class="muted">Each part of a team brand can be changed once per season.</p>
+        <p id="brand-message" class="save-message" role="status"></p>
+      </div>
+      <div id="brand-editor" class="brand-editor"></div>
+    </section>
+
+    <section id="moves-view" class="view" data-section-view="office">
+      <p id="trade-alert-message" class="trade-alert-message" hidden>You have a pending trade offer!</p>
+      <div class="moves-toolbar panel">
+        <div>
+          <span class="card-label">Your team</span>
+          <strong id="moves-team"></strong>
+        </div>
+        <p class="muted">Roster moves are locked to the team assigned to your manager account.</p>
+        <p id="moves-message" class="save-message" role="status"></p>
+      </div>
+      <div class="moves-layout">
+        <section class="panel moves-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Negotiation desk</span><h2>Propose trade</h2></div>
+          </div>
+          <label class="move-field">Offer
+            <select id="trade-offered"></select>
+          </label>
+          <label class="move-field">To
+            <select id="trade-team"></select>
+          </label>
+          <label class="move-field">Request
+            <select id="trade-requested"></select>
+          </label>
+          <button id="propose-trade" class="primary-button full">Send trade offer</button>
+        </section>
+        <section class="panel moves-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Open market</span><h2>Free agency</h2></div>
+          </div>
+          <label class="move-field">Sign
+            <select id="free-agent"></select>
+          </label>
+          <label class="move-field">Release
+            <select id="release-racer"></select>
+          </label>
+          <button id="sign-free-agent" class="primary-button full">Complete roster swap</button>
+        </section>
+      </div>
+      <div class="moves-layout lower">
+        <section class="panel moves-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">Awaiting decisions</span><h2>Trade offers</h2></div>
+          </div>
+          <div id="trade-offers"></div>
+        </section>
+        <section class="panel moves-panel">
+          <div class="section-heading">
+            <div><span class="eyebrow">League ledger</span><h2>Transaction history</h2></div>
+          </div>
+          <div id="transaction-history"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="development-view" class="view" data-section-view="office">
+      <div class="development-toolbar panel">
+        <div>
+          <span class="card-label">Your team</span>
+          <strong id="development-team"></strong>
+        </div>
+        <div>
+          <span class="card-label">Upgrade period</span>
+          <strong id="development-week">Week 1</strong>
+        </div>
+        <p id="development-message" class="save-message" role="status"></p>
+      </div>
+      <div class="section-heading development-heading">
+        <div>
+          <span class="eyebrow">Sunday racer development</span>
+          <h2>Weekly Trainings</h2>
+        </div>
+        <span>Shared choices / two per team</span>
+      </div>
+      <div id="upgrade-options" class="upgrade-options"></div>
+      <div class="section-heading development-heading car-upgrade-heading">
+        <div>
+          <span class="eyebrow">Sunday vehicle development</span>
+          <h2>Weekly Upgrade</h2>
+        </div>
+        <span>Shared choices / one per team</span>
+      </div>
+      <div id="car-upgrade-options" class="upgrade-options"></div>
+      <section class="panel development-history-panel">
+        <div class="section-heading">
+          <div><span class="eyebrow">This week's work</span><h2>Development record</h2></div>
+        </div>
+        <div id="development-history"></div>
+      </section>
+    </section>
+
+    <section id="stewards-view" class="view" data-section-view="office">
+      <div class="section-heading league-heading">
+        <div><span class="eyebrow">Prototype controls</span><h2>Stewards</h2></div>
+      </div>
+      <section class="panel stewards-panel">
+        <p class="muted">Use these to move the local test league through schedule states quickly. These controls are for prototyping, not in-world manager actions.</p>
+        <div class="stewards-actions">
+          <button class="primary-button" data-stewards-action="next-race">Start next race now</button>
+          <button class="primary-button" data-stewards-action="finish-race">Finish current race immediately</button>
+          <button class="primary-button" data-stewards-action="race-10">Fast forward to Race 10</button>
+          <button class="primary-button" data-stewards-action="skip-opening-draft">Skip opening draft and martyr</button>
+          <button class="primary-button" data-stewards-action="auto-rookie-releases">Auto-complete rookie roster releases</button>
+          <button class="primary-button" data-stewards-action="next-season">Start next season</button>
+          <button class="secondary-button danger-button" data-stewards-action="reset-season">Reset current season races</button>
+        </div>
+        <p id="stewards-message" class="save-message" role="status"></p>
+      </section>
+    </section>
+  </main>
+
+  <footer hidden>
+    <span>By the grace of The Stewards, their light eternal // ASSCAR60 // 2026</span>
+  </footer>
+  <dialog id="martyr-vote-dialog" class="brand-confirm-dialog martyr-dialog">
+    <div class="brand-confirm-card martyr-card">
+      <span class="eyebrow">Opening draft rite</span>
+      <h2>Draft complete!</h2>
+      <p>Now, The Stewards (glory be upon them) demand a sacrifice to The Speed God from among the unworthy. Who shall be this season's Initiation Martyr?</p>
+      <p class="martyr-field">Voting team <strong id="martyr-team"></strong></p>
+      <label class="martyr-field">Unsigned driver
+        <select id="martyr-candidate"></select>
+      </label>
+      <div id="martyr-vote-progress" class="martyr-vote-progress"></div>
+      <p id="martyr-vote-message" class="save-message" role="status"></p>
+      <div class="brand-confirm-actions">
+        <button id="submit-martyr-vote" type="button" class="primary-button">Cast vote</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="martyr-result-dialog" class="brand-confirm-dialog martyr-dialog">
+    <div class="brand-confirm-card martyr-card martyr-result-card">
+      <span class="eyebrow">The tally is complete</span>
+      <h2>The Stewards have chosen</h2>
+      <p id="martyr-result-message"></p>
+      <div class="brand-confirm-actions">
+        <button id="close-martyr-result" type="button" class="primary-button">Speed godspeed</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="season-ceremony-dialog" class="season-ceremony-dialog">
+    <div class="season-ceremony-card">
+      <span class="eyebrow">The final decree</span>
+      <p id="season-ceremony-season" class="season-ceremony-season"></p>
+      <h2>The Champions Are Crowned</h2>
+      <p class="season-ceremony-proclamation">The Stewards, may they reign forever and ever, have come to a consensus! Let the victors be recognized:</p>
+      <div id="season-ceremony-honors" class="season-ceremony-honors"></div>
+      <p class="season-ceremony-closing">Glory be to these humble servants of Velocitus!</p>
+      <div class="season-ceremony-actions">
+        <button id="close-season-ceremony" type="button" class="primary-button">Speed godspeed!</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="next-season-dialog" class="brand-confirm-dialog">
+    <div class="brand-confirm-card">
+      <span class="eyebrow">Season transition</span>
+      <h2>Begin the next season?</h2>
+      <p>Career records, racer development, discovered stat caps, car upgrades, team brands, and league history will carry forward. Standings, drafts, weekly choices, and brand-change permissions will begin anew.</p>
+      <div class="brand-confirm-actions">
+        <button id="cancel-next-season" type="button" class="secondary-button">Remain here</button>
+        <button id="confirm-next-season" type="button" class="primary-button">Begin next season</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="brand-confirm-dialog" class="brand-confirm-dialog">
+    <form method="dialog" class="brand-confirm-card">
+      <span class="eyebrow">Seasonal brand change</span>
+      <h2>Confirm change</h2>
+      <p id="brand-confirm-message">This element of your team brand may only be changed once per season. Are you sure you want to make the change?</p>
+      <div class="brand-confirm-actions">
+        <button id="cancel-brand-change" type="button" class="secondary-button">Cancel</button>
+        <button id="confirm-brand-change" type="button" class="primary-button">Confirm change</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="logout-dialog" class="brand-confirm-dialog">
+    <form method="dialog" class="brand-confirm-card logout-card">
+      <h2>Logout?</h2>
+      <div class="brand-confirm-actions">
+        <button id="cancel-logout" type="button" class="secondary-button">No</button>
+        <button id="confirm-logout" type="button" class="primary-button">Yes</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="media-dialog" class="brand-confirm-dialog media-dialog">
+    <form id="media-form" method="dialog" class="brand-confirm-card media-editor-card">
+      <span class="eyebrow">League media</span>
+      <h2 id="media-dialog-title">Add Entry</h2>
+      <label class="media-field">
+        <span>Title</span>
+        <input id="media-title" name="title" type="text" maxlength="140" required>
+      </label>
+      <label id="media-author-field" class="media-field" hidden>
+        <span>Author</span>
+        <select id="media-author" name="author"></select>
+      </label>
+      <label class="media-field">
+        <span>Text</span>
+        <textarea id="media-body" name="body" rows="18" required></textarea>
+      </label>
+      <p id="media-message" class="media-message"></p>
+      <div class="brand-confirm-actions">
+        <button id="cancel-media-entry" type="button" class="secondary-button">Cancel</button>
+        <button id="save-media-entry" type="submit" class="primary-button">Save and Publish</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="stewards-reset-dialog" class="brand-confirm-dialog">
+    <form method="dialog" class="brand-confirm-card">
+      <span class="eyebrow">Stewards control</span>
+      <h2>Reset current season races?</h2>
+      <p>This clears race results, weekly development records, rookie draft state, and martyr state for the current season. Rosters, accounts, brands, and the completed opening draft remain.</p>
+      <div class="brand-confirm-actions">
+        <button id="cancel-stewards-reset" type="button" class="secondary-button">No</button>
+        <button id="confirm-stewards-reset" type="button" class="primary-button">Yes, reset races</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="/app.mjs?v=draft-vote-badge-20260718a"></script>
+</body>
+</html>
