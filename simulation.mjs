@@ -851,6 +851,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     seenSegments: new Set(),
     overtakePairs: new Set(),
     tickOvertakePairs: new Set(),
+    overtakeCooldownUntil: 0,
     pendingStrange: null,
     positionRecords: [{
       time: 0,
@@ -1013,6 +1014,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
         const attacker = order[index];
         const defender = order[index - 1];
         if (involved.has(attacker.id) || involved.has(defender.id)) continue;
+        if (time < attacker.overtakeCooldownUntil) continue;
         const liveOrder = runningAtTick
           .filter((entry) => entry.status === "running")
           .sort((a, b) => b.position - a.position);
@@ -1080,6 +1082,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
             });
           }
         } else {
+          attacker.overtakeCooldownUntil = eventTime + 6;
           events.push({
             time: eventTime,
             type: "overtake-denied",
