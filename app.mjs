@@ -1643,11 +1643,6 @@ function renderCourses() {
         </div>
         ${course.focus ? `<p class="muted">Focus: ${escapeHtml(course.focus)}</p>` : ""}
         <div class="course-features">
-          <div class="course-feature">
-            <span>Open course</span>
-            <strong>${summary.straights}</strong>
-            <small>Overtakes allowed</small>
-          </div>
           ${courseFeatureMarkup("Turns", turns)}
           ${courseFeatureMarkup("Chicanes", chicanes)}
         </div>
