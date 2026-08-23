@@ -26,11 +26,82 @@ const MVD_CLOSER_BONUS_UNITS = 0.02 * TOTAL_LAPS;
 const LEAGUE_CODE = "shreveport";
 const STEWARD_USERNAME = "devman";
 const STEWARD_PASSWORD = "devman";
-const PIT_COACH_SPECIALTIES = Array.from({ length: 12 }, (_, index) => ({
-  key: `specialty-${index + 1}`,
-  name: `Specialty ${index + 1}`,
-  description: "generic effect",
-}));
+const PIT_COACH_SPECIALTIES = [
+  {
+    key: "specialty-1",
+    name: "Specialty 1",
+    description: "Any driver with they/them pronouns signed to your team treats their car's speed as 1 more than it is.",
+  },
+  {
+    key: "specialty-2",
+    name: "Specialty 2",
+    description: "Any driver with it/its pronouns signed to your team treats their car's speed as 1 more than it is.",
+  },
+  {
+    key: "specialty-3",
+    name: "Specialty 3",
+    description: "If no driver in your relay plan has Stamina above 6, both cars' Durability is treated as 2 higher for that race.",
+  },
+  {
+    key: "specialty-4",
+    name: "Specialty 4",
+    description: "If, as part of or as the entirety of your offer with another manager, you trade one of your veterans for a rookie, that rookie's control is permanently increased by 1.",
+  },
+  {
+    key: "specialty-5",
+    name: "Specialty 5",
+    description: "When your Bridge drivers have mishaps in turns or chicanes, their time penalty is 1 second less.",
+  },
+  {
+    key: "specialty-6",
+    name: "Specialty 6",
+    description: "If your team ever has two drivers with Marks of The Speed God on the course at the same time, they both instantly develop Speed Madness.",
+  },
+  {
+    key: "specialty-7",
+    name: "Specialty 7",
+    description: "Drivers on your team who have at least one stat of 4 or below will never undergo negative race events. This does not include mishaps.",
+  },
+  {
+    key: "specialty-8",
+    name: "Specialty 8",
+    description: "If you pick your highest-scoring driver as a Dark Sacrifice at the end of the season, you get the normal +50 to your season score and the curse next season, but you are also given first pick in next season's opening draft.",
+  },
+  {
+    key: "specialty-9",
+    name: "Specialty 9",
+    description: "When your drivers win an overtake attack, the defending car takes a 1 second penalty. When your drivers lose an overtake attack, they take a 1 second penalty.",
+  },
+  {
+    key: "specialty-10",
+    name: "Specialty 10",
+    description: "Your cars' degradation doesn't affect their speed, but it doubly affects their handling.",
+  },
+  {
+    key: "specialty-11",
+    name: "Specialty 11",
+    description: "Drivers on your team for whom Stamina is the single highest stat do not suffer stat degradation.",
+  },
+  {
+    key: "specialty-12",
+    name: "Specialty 12",
+    description: "If no signed drivers to your team have a Control higher than 8, your cars' handling is treated as 2 higher.",
+  },
+];
+const PIT_COACH_FIRST_NAMES = [
+  "Gluck", "Tugg", "Lug", "Brick", "Brant", "Fig", "Dirk", "Vince", "Clint", "Clunt",
+  "Pap", "Wag", "Jump", "Trig", "Hoss", "Beff", "Rank", "Pole", "Uncle", "Gramps",
+  "P.L.", "T.T.", "Barry", "Dairy", "Fairy", "Harry", "Sally", "Surrey", "Sully",
+  "Hunter", "Mayson", "Punt", "Fist", "Slam", "Darius", "Tarius", "Tyrone", "Julius",
+  "Crunch", "Roman", "Zeus", "Cleo", "July", "June", "April", "May", "Smack", "Orson",
+  "Rick", "Stick", "Click",
+];
+const PIT_COACH_LAST_NAMES = [
+  "Dastard", "Farris", "Johnson", "Donson", "Bronson", "Harris", "Blaze", "Rice",
+  "Lumpson", "Dumpson", "Crack", "Bangz", "Rifleson", "Gunder", "Uhrengard", "Sorrenson",
+  "Stimson", "Nobrakes", "Nitrosterone", "Ding Ow", "Von Vroom", "Burnfardt", "Speedums",
+  "Roadhead",
+];
 const MAX_TRADE_ITEMS_PER_SIDE = 3;
 const BASE_WEEKLY_TRAINING_SLOTS = 2;
 const BASE_WEEKLY_CAR_UPGRADE_SLOTS = 1;
@@ -962,6 +1033,13 @@ function seededRandom(seed) {
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+function generatePitCoachName(seed) {
+  const random = seededRandom(hashText(`pit-coach-name:${seed}`));
+  const first = PIT_COACH_FIRST_NAMES[Math.floor(random() * PIT_COACH_FIRST_NAMES.length)];
+  const last = PIT_COACH_LAST_NAMES[Math.floor(random() * PIT_COACH_LAST_NAMES.length)];
+  return `${first} ${last}`;
 }
 
 export function pronounsForRacer(identity) {
@@ -4202,11 +4280,7 @@ export function createLeagueStore(path = ":memory:") {
     if (!specialty) throw new Error("Unknown Pit Coach specialty.");
     const existing = readPitCoachSelection.get(season, teamId);
     const coachName = existing?.coach_name
-      || generateRacerNames(
-        1,
-        hashText(`pit-coach:${season}:${teamId}:${specialtyKey}`),
-        readAllRacerNames.all().map((row) => row.name),
-      )[0];
+      || generatePitCoachName(`${season}:${teamId}:${specialtyKey}`);
     upsertPitCoachSelection.run(
       season,
       teamId,
