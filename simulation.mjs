@@ -897,7 +897,12 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
 
   const recordPosition = (entry, time, positionOverride = null) => {
     const latest = entry.positionRecords.at(-1);
-    const position = clamp(positionOverride ?? entry.position, 0, TOTAL_LAPS);
+    const basePosition = positionOverride ?? entry.position;
+    const position = clamp(
+      latest && latest.time <= time ? Math.max(basePosition, latest.position) : basePosition,
+      0,
+      TOTAL_LAPS,
+    );
     if (
       latest
       && Math.abs(latest.time - time) < 0.0001
@@ -947,7 +952,6 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     time: 3,
     type: "grid-chaos",
     message: "The grid becomes a mess as drivers jockey for position!",
-    standings: snapshotAtTime(racers, 0),
   }];
 
   let time = 0;
@@ -1230,7 +1234,15 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
       tickEndPosition = tickState.endPosition;
       while (entry.status === "running" && tickEndPosition >= entry.nextCheckpoint) {
         const checkpoint = entry.nextCheckpoint;
-        const crossingTime = nextTime - (tickEndPosition - checkpoint) / Math.max(speed, 0.0001);
+        const interpolatedCrossingTime = nextTime - (tickEndPosition - checkpoint) / Math.max(speed, 0.0001);
+        const jumpAcrossCheckpoint = entry.positionRecords.find((record) => (
+          record.time >= time
+          && record.time <= nextTime
+          && record.position >= checkpoint
+        ));
+        const crossingTime = jumpAcrossCheckpoint
+          ? Math.min(interpolatedCrossingTime, jumpAcrossCheckpoint.time + 0.001)
+          : interpolatedCrossingTime;
         const driver = driverForLap(entry, checkpoint);
         const partElapsed = crossingTime - entry.currentPartStart;
         const performanceLapTime = Math.max(0, partElapsed - entry.currentPartPitPenalty);
@@ -1353,7 +1365,11 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     }
   }
   for (const event of [...events].sort(compareRaceEvents)) {
-    if (!event.standings) event.standings = snapshotAtTime(racers, event.time);
+    event.standings = snapshotAtTime(racers, event.time);
+    if (event.category === "event" && event.entryId) {
+      const actor = event.standings.find((standing) => standing.id === event.entryId);
+      if (actor) Object.assign(event, positionMeta(actor.raceProgress));
+    }
   }
   const duration = podiumTime;
   addActionEvents(events, racers, duration, random);
