@@ -4610,12 +4610,20 @@ export function createLeagueStore(path = ":memory:") {
 
   function tradeAvailability(offers = readTradeOffers.all()) {
     const unavailable = Object.fromEntries(teams.map((team) => [team.id, []]));
+    const addUnavailableTradeItem = (teamId, item) => {
+      if (!unavailable[teamId]) return;
+      if (item.type === "training") {
+        unavailable[teamId].push("training:single", "training:both");
+        return;
+      }
+      unavailable[teamId].push(tradeItemKey(item));
+    };
     for (const offer of offers.filter((item) => item.status === "pending")) {
       for (const item of parseTradeItems(offer, "offered")) {
-        unavailable[offer.offering_team_id]?.push(tradeItemKey(item));
+        addUnavailableTradeItem(offer.offering_team_id, item);
       }
       for (const item of parseTradeItems(offer, "requested")) {
-        unavailable[offer.receiving_team_id]?.push(tradeItemKey(item));
+        addUnavailableTradeItem(offer.receiving_team_id, item);
       }
     }
     return Object.fromEntries(
