@@ -119,6 +119,58 @@ function driverForLap(entry, lap) {
     || entry.stints.at(-1).driver;
 }
 
+function roleForLap(entry, lap) {
+  const index = entry.stints.findIndex((stint) => lap >= stint.start && lap <= stint.end);
+  return ["Opener", "Bridge", "Closer"][index] || "Bridge";
+}
+
+function hasCoachSpecialty(entry, specialtyKey) {
+  return entry.pitCoach?.specialtyKey === specialtyKey;
+}
+
+function driverPronounsAre(driver, pronouns) {
+  return String(driver?.pronouns || "").toLowerCase() === String(pronouns).toLowerCase();
+}
+
+function driverUsesItPronouns(driver) {
+  return String(driver?.pronouns || "").toLowerCase().startsWith("it/");
+}
+
+function hasLowStat(driver) {
+  return [driver.control, driver.overtaking, driver.stamina].some((value) => Number(value) <= 4);
+}
+
+function relayHasNoHighStamina(entry) {
+  return entry.uniqueDrivers.every((driver) => Number(driver.stamina) <= 6);
+}
+
+function coachSpeedBonus(entry, driver) {
+  let bonus = 0;
+  if (hasCoachSpecialty(entry, "specialty-1") && driverPronounsAre(driver, "They/Them")) bonus += 1;
+  if (hasCoachSpecialty(entry, "specialty-2") && driverUsesItPronouns(driver)) bonus += 1;
+  return bonus;
+}
+
+function coachHandlingBonus(entry) {
+  return hasCoachSpecialty(entry, "specialty-12") && entry.pitCoach?.noControlAbove8 ? 2 : 0;
+}
+
+function coachDurabilityBonus(entry) {
+  return hasCoachSpecialty(entry, "specialty-3") && relayHasNoHighStamina(entry) ? 2 : 0;
+}
+
+function carWearForStat(entry, stat) {
+  if (!hasCoachSpecialty(entry, "specialty-10")) return entry.carWear;
+  return stat === "handling" ? entry.carWear * 2 : 0;
+}
+
+function coachCornerMishapPenalty(entry, stats, penalty) {
+  if (hasCoachSpecialty(entry, "specialty-5") && stats.role === "Bridge") {
+    return Math.max(0, penalty - 1);
+  }
+  return penalty;
+}
+
 function mergeRaceOrder(currentOrder, activeOrder) {
   const activeSet = new Set(activeOrder);
   let activeIndex = 0;
@@ -838,10 +890,12 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
   const random = randomGenerator(seed);
   const course = courseByName(options.courseName);
   const condition = options.condition || conditionForRoll(course, random());
+  const pitCoachesByTeam = options.pitCoachesByTeam || {};
   const segmentCount = course.segments.length;
   const totalSegments = TOTAL_LAPS * segmentCount;
   const racers = entries.map((entry) => ({
     ...entry,
+    pitCoach: pitCoachesByTeam[entry.teamId] || null,
     position: 0,
     nextCheckpoint: 1,
     currentPartStart: 0,
@@ -884,9 +938,13 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
       weirdChance(clamp(3 + markBonus, 1, 10)),
     );
     if (random() >= strangeChance) return;
-    const effects = condition === "Churning"
+    const possibleEffects = condition === "Churning"
       ? [...ALWAYS_STRANGE_EFFECTS, ...CHURNING_EFFECTS]
       : ALWAYS_STRANGE_EFFECTS;
+    const effects = hasCoachSpecialty(entry, "specialty-7") && hasLowStat(driver)
+      ? possibleEffects.filter((effect) => effect.tone !== "bad")
+      : possibleEffects;
+    if (!effects.length) return;
     entry.pendingStrange = {
       ...effects[Math.floor(random() * effects.length)],
       part,
@@ -919,14 +977,17 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     const driver = driverForLap(entry, part);
     const bonuses = driverBonuses(entry, driver.id);
     const driverFatigue = entry.driverFatigue.get(driver.id) || 0;
+    const speedBonus = (entry.carBonuses.speed || 0) + coachSpeedBonus(entry, driver);
+    const handlingBonus = (entry.carBonuses.handling || 0) + coachHandlingBonus(entry);
     return {
       part,
       driver,
+      role: roleForLap(entry, part),
       bonuses,
       control: clamp(driver.control + (bonuses.control || 0) - driverFatigue, 1, 10),
       overtaking: clamp(driver.overtaking + (bonuses.overtaking || 0) - driverFatigue, 1, 10),
-      speed: clamp(entry.vehicle.speed + (entry.carBonuses.speed || 0) - entry.carWear, 1, 10),
-      handling: clamp(entry.vehicle.handling + (entry.carBonuses.handling || 0) - entry.carWear, 1, 10),
+      speed: clamp(entry.vehicle.speed + speedBonus - carWearForStat(entry, "speed"), 1, 10),
+      handling: clamp(entry.vehicle.handling + handlingBonus - carWearForStat(entry, "handling"), 1, 10),
       severityBonus: bonuses.severity || 0,
     };
   };
@@ -1073,6 +1134,9 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
             ][Math.floor(random() * 4)],
             category: "event",
           });
+          if (hasCoachSpecialty(attacker, "specialty-9")) {
+            defender.penaltyRemaining += 1;
+          }
           if (random() < 1 / 20) {
             defender.penaltyRemaining += 3;
             events.push({
@@ -1101,6 +1165,9 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
             ][Math.floor(random() * 3)],
             category: "event",
           });
+          if (hasCoachSpecialty(attacker, "specialty-9")) {
+            attacker.penaltyRemaining += 1;
+          }
           if (random() < 1 / 10) {
             attacker.penaltyRemaining += 3;
             events.push({
@@ -1203,7 +1270,11 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
         const denominator = weatherMishapFactor(condition)
           * (5 + currentStats.control + currentStats.handling - severity);
         if (random() < cornerMishapChance(denominator)) {
-          const penalty = cornerMishapPenalty(severity, random);
+          const penalty = coachCornerMishapPenalty(
+            entry,
+            currentStats,
+            cornerMishapPenalty(severity, random),
+          );
           entry.penaltyRemaining += penalty;
           events.push({
             time: eventTime,
@@ -1307,7 +1378,9 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
         const currentStats = effectiveStats(entry);
         updateFatigue(entry, driver, partElapsed);
         const effectiveDurability = clamp(
-          entry.vehicle.durability + (entry.carBonuses.durability || 0),
+          entry.vehicle.durability
+            + (entry.carBonuses.durability || 0)
+            + coachDurabilityBonus(entry),
           1,
           10,
         );

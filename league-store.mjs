@@ -5567,6 +5567,16 @@ export function createLeagueStore(path = ":memory:") {
     return getRaceCenter(nextSeason);
   }
 
+  function pitCoachRaceContext(season) {
+    return Object.fromEntries(readPitCoachSelections.all(season).map((selection) => {
+      const roster = readRoster.all(selection.team_id);
+      return [selection.team_id, {
+        specialtyKey: selection.specialty_key,
+        noControlAbove8: roster.every((racer) => Number(racer.control) <= 8),
+      }];
+    }));
+  }
+
   function createRace({
     season = getActiveSeason(),
     condition: forcedCondition,
@@ -5624,7 +5634,11 @@ export function createLeagueStore(path = ":memory:") {
       condition,
       forecastSeed,
     );
-    const race = simulateRace(entries, seed, { courseName, condition });
+    const race = simulateRace(entries, seed, {
+      courseName,
+      condition,
+      pitCoachesByTeam: pitCoachRaceContext(season),
+    });
     const pole = [...entries].sort((a, b) => a.startingGridPosition - b.startingGridPosition)[0];
     if (pole) {
       race.events.push({
