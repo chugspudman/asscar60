@@ -966,10 +966,16 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .martyr-vote-progress span.voted { border-color: var(--ink); background: var(--acid); color: var(--acid-ink); }
 .martyr-result-card h2 { color: #c40000; }
 .martyr-result-card #martyr-result-message { white-space: pre-line; color: var(--ink); font-size: 16px; font-weight: 700; }
-.dark-sacrifice-card { border-top-color: #7b3bff; }
+.dark-sacrifice-card { border-top-color: var(--sacrifice-color, var(--acid)); }
 .dark-sacrifice-card > p { max-height: 220px; overflow: auto; line-height: 1.55; }
-#submit-dark-sacrifice { background: #6f7772; color: #fff; border-color: #9aa39d; }
-.dark-sacrifice-result-card h2 { color: #b99cff; }
+.dark-sacrifice-result-card { border-top-color: var(--sacrifice-color, var(--acid)); }
+#submit-dark-sacrifice,
+#close-dark-sacrifice-result {
+  background: var(--sacrifice-color, var(--acid));
+  color: var(--sacrifice-ink, var(--acid-ink));
+  border-color: var(--sacrifice-color, var(--acid));
+}
+.dark-sacrifice-result-card h2 { color: var(--ink); }
 .dark-sacrifice-result-card #dark-sacrifice-result-message { white-space: pre-line; color: var(--ink); font-size: 16px; font-weight: 700; line-height: 1.6; }
 .stain-of-sin {
   display: inline-block;

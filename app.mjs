@@ -323,6 +323,7 @@ const elements = {
   darkSacrificeMessage: document.querySelector("#dark-sacrifice-message"),
   submitDarkSacrifice: document.querySelector("#submit-dark-sacrifice"),
   darkSacrificeResultDialog: document.querySelector("#dark-sacrifice-result-dialog"),
+  darkSacrificeResultHeading: document.querySelector("#dark-sacrifice-result-heading"),
   darkSacrificeResultMessage: document.querySelector("#dark-sacrifice-result-message"),
   closeDarkSacrificeResult: document.querySelector("#close-dark-sacrifice-result"),
   seasonCeremonyDialog: document.querySelector("#season-ceremony-dialog"),
@@ -3284,6 +3285,9 @@ function renderDarkSacrificeChoice() {
     : "";
   const chosenTeamIds = new Set((darkSacrifice.choices || []).map((choice) => choice.team_id));
   const canChoose = Boolean(managedTeamId()) && !chosenTeamIds.has(managedTeamId());
+  const team = teams.find((item) => item.id === managedTeamId()) || teams[0];
+  elements.darkSacrificeDialog.style.setProperty("--sacrifice-color", team.color);
+  elements.darkSacrificeDialog.style.setProperty("--sacrifice-ink", contrastColor(team.color));
   elements.darkSacrificeCandidate.innerHTML = [
     `<option value="">No one!</option>`,
     ...(darkSacrifice.candidates || []).map((racer) => (
@@ -3306,13 +3310,20 @@ function showDarkSacrificeResult({ automatic = false } = {}) {
   if (state.darkSacrifice.status !== "resolved" || elements.darkSacrificeResultDialog.open) return false;
   if (automatic && darkSacrificeResultSeen()) return false;
   const sacrifices = state.darkSacrifice.sacrifices || [];
+  const team = teams.find((item) => item.id === managedTeamId()) || teams[0];
+  elements.darkSacrificeResultDialog.style.setProperty("--sacrifice-color", team.color);
+  elements.darkSacrificeResultDialog.style.setProperty("--sacrifice-ink", contrastColor(team.color));
   if (sacrifices.length) {
+    elements.darkSacrificeResultHeading.textContent = "Into the End they were cast, these Dark Sacrifices:";
+    elements.closeDarkSacrificeResult.textContent = "Stewards forgive us...";
     elements.darkSacrificeResultMessage.innerHTML = sacrifices.map((sacrifice) => {
       const team = teams.find((item) => item.id === sacrifice.teamId);
       return `${escapeHtml(sacrifice.racerName)} - ${escapeHtml(team?.short || sacrifice.teamId)}`;
     }).join("<br>");
   } else {
-    elements.darkSacrificeResultMessage.textContent = "None succumbed to the drone of the Decelerator is season.";
+    elements.darkSacrificeResultHeading.textContent = "None succumbed to the drone of the Decelerator today";
+    elements.closeDarkSacrificeResult.textContent = "Stewards bless us!";
+    elements.darkSacrificeResultMessage.textContent = "";
   }
   elements.darkSacrificeResultDialog.showModal();
   return true;
