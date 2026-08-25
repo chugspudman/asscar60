@@ -3279,6 +3279,9 @@ function renderDarkSacrificeChoice() {
     if (elements.darkSacrificeDialog.open) elements.darkSacrificeDialog.close();
     return;
   }
+  const priorSelection = elements.darkSacrificeDialog.open
+    ? elements.darkSacrificeCandidate.value
+    : "";
   const chosenTeamIds = new Set((darkSacrifice.choices || []).map((choice) => choice.team_id));
   const canChoose = Boolean(managedTeamId()) && !chosenTeamIds.has(managedTeamId());
   elements.darkSacrificeCandidate.innerHTML = [
@@ -3287,6 +3290,9 @@ function renderDarkSacrificeChoice() {
       `<option value="${racer.id}">${escapeHtml(racer.name)} (${escapeHtml(racer.pronouns)})</option>`
     )),
   ].join("");
+  if ((darkSacrifice.candidates || []).some((racer) => racer.id === priorSelection)) {
+    elements.darkSacrificeCandidate.value = priorSelection;
+  }
   elements.darkSacrificeProgress.innerHTML = teams.map((team) => (
     `<span class="${chosenTeamIds.has(team.id) ? "voted" : ""}">${escapeHtml(team.short)} ${chosenTeamIds.has(team.id) ? "chosen" : "awaiting"}</span>`
   )).join("");
