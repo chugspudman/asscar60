@@ -1430,7 +1430,7 @@ function renderNewsTicker() {
     const awaiting = state.rookieDraft.teamsAwaitingRelease || [];
     text = `Roster releases required: ${awaiting.map((teamId) => teams.find((team) => team.id === teamId)?.short || teamId).join(", ")}.`;
   } else if (state.raceCenter.raceScheduleComplete && state.darkSacrifice.status === "voting") {
-    text = "The Decelerator waits for an answer.";
+    text = "The Decelerator waits.";
   } else if (state.raceCenter.seasonComplete) {
     text = "Season complete. Champions crowned.";
   } else {
