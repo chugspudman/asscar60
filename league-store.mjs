@@ -2188,6 +2188,7 @@ export function createLeagueStore(path = ":memory:") {
       AND id NOT IN (SELECT racer_id FROM draft_picks)
   `);
   const assignRacer = database.prepare("UPDATE racers SET team_id = ? WHERE id = ?");
+  const increaseRacerControl = database.prepare("UPDATE racers SET control = MIN(10, control + 1) WHERE id = ?");
   const clearRosters = database.prepare("UPDATE racers SET team_id = NULL WHERE team_id IS NOT NULL");
   const countDraftPoolRacers = database.prepare(`
     SELECT COUNT(*) AS count FROM racers WHERE source = 'draft'
@@ -4651,6 +4652,15 @@ export function createLeagueStore(path = ":memory:") {
     );
   }
 
+  function applyVeteranForRookieCoachBonus(teamId, sentRacers, receivedRacers) {
+    if (readPitCoachSelection.get(getActiveSeason(), teamId)?.specialty_key !== "specialty-4") return;
+    const tradedVeteran = sentRacers.some((racer) => racer && !isRookieOrigin(racer));
+    if (!tradedVeteran) return;
+    for (const racer of receivedRacers.filter((item) => item && isRookieOrigin(item))) {
+      increaseRacerControl.run(racer.id);
+    }
+  }
+
   function transferAcceptedTradeItems(fromTeamId, toTeamId, items, tradeOfferId, now) {
     for (const item of items) {
       if (item.type === "training") {
@@ -5188,6 +5198,8 @@ export function createLeagueStore(path = ":memory:") {
       const now = new Date().toISOString();
       for (const racerId of offeredIds) assignRacer.run(offer.receiving_team_id, racerId);
       for (const racerId of requestedIds) assignRacer.run(offer.offering_team_id, racerId);
+      applyVeteranForRookieCoachBonus(offer.offering_team_id, offered, requested);
+      applyVeteranForRookieCoachBonus(offer.receiving_team_id, requested, offered);
       transferAcceptedTradeItems(
         offer.offering_team_id,
         offer.receiving_team_id,

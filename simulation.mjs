@@ -140,6 +140,11 @@ function hasLowStat(driver) {
   return [driver.control, driver.overtaking, driver.stamina].some((value) => Number(value) <= 4);
 }
 
+function staminaIsSingleHighestStat(driver) {
+  const stamina = Number(driver?.stamina);
+  return stamina > Number(driver?.control) && stamina > Number(driver?.overtaking);
+}
+
 function relayHasNoHighStamina(entry) {
   return entry.uniqueDrivers.every((driver) => Number(driver.stamina) <= 6);
 }
@@ -169,6 +174,13 @@ function coachCornerMishapPenalty(entry, stats, penalty) {
     return Math.max(0, penalty - 1);
   }
   return penalty;
+}
+
+function applySpeedMadness(entry, driver) {
+  const bonuses = driverBonuses(entry, driver.id);
+  bonuses.control = Math.max(bonuses.control || 0, 10 - driver.control);
+  bonuses.overtaking = Math.max(bonuses.overtaking || 0, 10 - driver.overtaking);
+  bonuses.stamina = Math.max(bonuses.stamina || 0, 10 - driver.stamina);
 }
 
 function mergeRaceOrder(currentOrder, activeOrder) {
@@ -635,6 +647,10 @@ function driverBonuses(entry, driverId) {
 
 function updateFatigue(entry, activeDriver, elapsedSeconds) {
   for (const driver of entry.uniqueDrivers) {
+    if (hasCoachSpecialty(entry, "specialty-11") && staminaIsSingleHighestStat(driver)) {
+      entry.driverFatigue.set(driver.id, 0);
+      continue;
+    }
     const current = entry.driverFatigue.get(driver.id) || 0;
     const bonuses = driverBonuses(entry, driver.id);
     const effectiveStamina = clamp(driver.stamina + (bonuses.stamina || 0), 1, 10);
@@ -921,6 +937,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     carBonuses: {},
     driverFatigue: new Map(),
     driverBonuses: new Map(),
+    speedMadnessDrivers: new Set(),
     lapRecords: [],
     dnfTime: null,
     dnfProgress: 0,
@@ -1019,6 +1036,33 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
   while (racers.some((entry) => entry.status === "running") && time < 7200) {
     const nextTime = time + 1;
     const runningAtTick = racers.filter((item) => item.status === "running");
+    const markedDriversByTeam = new Map();
+    for (const entry of runningAtTick) {
+      if (!hasCoachSpecialty(entry, "specialty-6")) continue;
+      const driver = driverForLap(entry, Math.min(TOTAL_LAPS, Math.floor(entry.position) + 1));
+      if (!driver.speed_mark) continue;
+      const marked = markedDriversByTeam.get(entry.teamId) || [];
+      marked.push({ entry, driver });
+      markedDriversByTeam.set(entry.teamId, marked);
+    }
+    for (const marked of markedDriversByTeam.values()) {
+      if (marked.length < 2) continue;
+      for (const { entry, driver } of marked) {
+        if (entry.speedMadnessDrivers.has(driver.id)) continue;
+        entry.speedMadnessDrivers.add(driver.id);
+        applySpeedMadness(entry, driver);
+        events.push({
+          time,
+          type: "strange",
+          entryId: entry.id,
+          ...positionMeta(entry.position),
+          message: `The Pit Coach sees two marked drivers beneath one banner, and ${driver.name} instantly develops SPEED MADNESS! (Control, Overtaking, and Stamina maxed this stint)`,
+          category: "event",
+          tone: "bad",
+          racerId: driver.id,
+        });
+      }
+    }
     for (const entry of runningAtTick) entry.tickOvertakePairs.clear();
     const tickStates = new Map();
     for (const entry of runningAtTick) {
@@ -1213,10 +1257,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
           entry.carWear = 0;
           entry.driverFatigue.set(driver.id, 0);
         } else if (effect.special === "mark") {
-          const bonuses = driverBonuses(entry, driver.id);
-          bonuses.control = 10 - driver.control;
-          bonuses.overtaking = 10 - driver.overtaking;
-          bonuses.stamina = 10 - driver.stamina;
+          applySpeedMadness(entry, driver);
           message.markGranted = true;
         } else if (effect.special === "dnf") {
           entry.status = "dnf";
