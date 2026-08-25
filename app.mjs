@@ -212,6 +212,7 @@ const elements = {
   draftRetentionMessage: document.querySelector("#draft-retention-message"),
   pitCoachFields: document.querySelector("#pit-coach-fields"),
   pitCoachSpecialty: document.querySelector("#pit-coach-specialty"),
+  pitCoachSpecialtyList: document.querySelector("#pit-coach-specialty-list"),
   pitCoachCurrent: document.querySelector("#pit-coach-current"),
   savePitCoach: document.querySelector("#save-pit-coach"),
   pitCoachMessage: document.querySelector("#pit-coach-message"),
@@ -2392,16 +2393,18 @@ function renderAdminRetention() {
   if (!elements.draftRetentionFields) return;
   elements.draftRetentionFields.hidden = !required;
   if (!required) return;
+  const currentVeteranId = selected.veteranRacerId || elements.draftRetainVeteran.value || "";
+  const currentRookieId = selected.rookieRacerId || elements.draftRetainRookie.value || "";
   elements.draftRetainVeteran.innerHTML = [
     `<option value="">Select veteran</option>`,
     ...retention.veterans.map((racer) => (
-      `<option value="${racer.id}" ${selected.veteranRacerId === racer.id ? "selected" : ""}>${escapeHtml(racer.name)}</option>`
+      `<option value="${racer.id}" ${currentVeteranId === racer.id ? "selected" : ""}>${escapeHtml(racer.name)}</option>`
     )),
   ].join("");
   elements.draftRetainRookie.innerHTML = [
     `<option value="">Select rookie</option>`,
     ...retention.rookies.map((racer) => (
-      `<option value="${racer.id}" ${selected.rookieRacerId === racer.id ? "selected" : ""}>${escapeHtml(racer.name)}</option>`
+      `<option value="${racer.id}" ${currentRookieId === racer.id ? "selected" : ""}>${escapeHtml(racer.name)}</option>`
     )),
   ].join("");
   const hasOptions = retention.veterans.length > 0 && retention.rookies.length > 0;
@@ -2420,14 +2423,29 @@ function renderPitCoachSelection() {
   const { options, selected, required } = pitCoachStateForManagedTeam();
   if (!elements.pitCoachFields) return;
   elements.pitCoachFields.hidden = false;
-  elements.pitCoachSpecialty.innerHTML = [
-    `<option value="">${options.length ? "Select specialty" : "Pit Coach specialties are loading"}</option>`,
-    ...options.map((option) => (
-      `<option value="${option.key}" ${selected?.specialtyKey === option.key ? "selected" : ""}>${escapeHtml(option.name)} - ${escapeHtml(option.description)}</option>`
-    )),
-  ].join("");
-  elements.pitCoachSpecialty.disabled = !required || Boolean(selected);
-  elements.savePitCoach.disabled = !required || Boolean(selected) || !options.length || !elements.pitCoachSpecialty.value;
+  const currentSpecialtyKey = selected?.specialtyKey || elements.pitCoachSpecialty.value || "";
+  elements.pitCoachSpecialty.value = currentSpecialtyKey;
+  const pickerDisabled = !required || Boolean(selected) || !options.length;
+  if (elements.pitCoachSpecialtyList) {
+    elements.pitCoachSpecialtyList.classList.toggle("disabled", pickerDisabled);
+    elements.pitCoachSpecialtyList.setAttribute("aria-disabled", pickerDisabled ? "true" : "false");
+    elements.pitCoachSpecialtyList.innerHTML = options.length
+      ? options.map((option) => `
+        <button
+          class="pit-coach-specialty-option ${currentSpecialtyKey === option.key ? "selected" : ""}"
+          type="button"
+          role="option"
+          aria-selected="${currentSpecialtyKey === option.key ? "true" : "false"}"
+          data-pit-coach-specialty="${option.key}"
+          ${pickerDisabled ? "disabled" : ""}
+        >
+          <strong>${escapeHtml(option.name)}</strong>
+          <span>${escapeHtml(option.description)}</span>
+        </button>
+      `).join("")
+      : `<p class="pit-coach-specialty-empty">Pit Coach specialties are loading</p>`;
+  }
+  elements.savePitCoach.disabled = pickerDisabled || !elements.pitCoachSpecialty.value;
   elements.savePitCoach.textContent = selected ? "Update Pit Coach specialty" : "Save Pit Coach specialty";
   elements.pitCoachCurrent.hidden = false;
   if (selected) {
@@ -3258,8 +3276,11 @@ function currentDraftVoteAlertKeys() {
 
 function syncUnreadDraftVoteAlerts(...sources) {
   const merged = new Set(state.unreadDraftVoteAlertIds || []);
+  const cleared = new Set(state.clearedDraftVoteAlertKeys || []);
   for (const source of sources) {
-    for (const key of source?.unreadDraftVoteAlertIds || []) merged.add(key);
+    for (const key of source?.unreadDraftVoteAlertIds || []) {
+      if (!cleared.has(key)) merged.add(key);
+    }
   }
   state.unreadDraftVoteAlertIds = [...merged];
 }
@@ -3940,9 +3961,18 @@ elements.saveDraftRetention?.addEventListener("click", async () => {
   }
 });
 
-elements.pitCoachSpecialty?.addEventListener("change", () => {
-  if (!elements.savePitCoach || elements.pitCoachFields?.hidden) return;
-  elements.savePitCoach.disabled = !elements.pitCoachSpecialty.value;
+elements.pitCoachSpecialtyList?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-pit-coach-specialty]");
+  if (!button || button.disabled || !elements.pitCoachSpecialty) return;
+  elements.pitCoachSpecialty.value = button.dataset.pitCoachSpecialty || "";
+  elements.pitCoachSpecialtyList.querySelectorAll("[data-pit-coach-specialty]").forEach((option) => {
+    const selected = option === button;
+    option.classList.toggle("selected", selected);
+    option.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+  if (elements.savePitCoach && !elements.pitCoachFields?.hidden) {
+    elements.savePitCoach.disabled = !elements.pitCoachSpecialty.value;
+  }
   if (elements.pitCoachMessage) elements.pitCoachMessage.textContent = "";
 });
 

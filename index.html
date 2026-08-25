@@ -569,9 +569,11 @@
           <div><span class="eyebrow">Pit wall</span><h2>Pit Coach Specialty</h2></div>
         </div>
         <p>Select your team's Pit Coach specialty for the upcoming season.</p>
-        <label class="draft-retention-field">Specialty
-          <select id="pit-coach-specialty"></select>
-        </label>
+        <div class="draft-retention-field pit-coach-specialty-field">
+          <span>Specialty</span>
+          <input id="pit-coach-specialty" type="hidden">
+          <div id="pit-coach-specialty-list" class="pit-coach-specialty-list" role="listbox" aria-label="Specialty"></div>
+        </div>
         <div id="pit-coach-current" class="move-field pit-coach-current" hidden></div>
         <button id="save-pit-coach" class="primary-button full">Save Pit Coach specialty</button>
         <p id="pit-coach-message" class="save-message" role="status"></p>
