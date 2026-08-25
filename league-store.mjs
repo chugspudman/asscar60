@@ -1035,11 +1035,39 @@ function seededRandom(seed) {
   };
 }
 
-function generatePitCoachName(seed) {
+function parsePitCoachName(name) {
+  const last = PIT_COACH_LAST_NAMES.find((candidate) => name.endsWith(` ${candidate}`));
+  if (!last) {
+    const [first = "", ...rest] = name.split(" ");
+    return { first, last: rest.join(" ") };
+  }
+  return {
+    first: name.slice(0, -last.length - 1),
+    last,
+  };
+}
+
+function generatePitCoachName(seed, existingNames = []) {
   const random = seededRandom(hashText(`pit-coach-name:${seed}`));
-  const first = PIT_COACH_FIRST_NAMES[Math.floor(random() * PIT_COACH_FIRST_NAMES.length)];
-  const last = PIT_COACH_LAST_NAMES[Math.floor(random() * PIT_COACH_LAST_NAMES.length)];
-  return `${first} ${last}`;
+  const existingParts = existingNames.map(parsePitCoachName);
+  const usedFirsts = new Set(existingParts.map((name) => name.first).filter(Boolean));
+  const usedLasts = new Set(existingParts.map((name) => name.last).filter(Boolean));
+  const usedFullNames = new Set(existingNames);
+  const firstOptions = PIT_COACH_FIRST_NAMES.filter((name) => !usedFirsts.has(name));
+  const lastOptions = PIT_COACH_LAST_NAMES.filter((name) => !usedLasts.has(name));
+  const firstPool = firstOptions.length ? firstOptions : PIT_COACH_FIRST_NAMES;
+  const lastPool = lastOptions.length ? lastOptions : PIT_COACH_LAST_NAMES;
+  const firstStart = Math.floor(random() * firstPool.length);
+  const lastStart = Math.floor(random() * lastPool.length);
+  for (let firstOffset = 0; firstOffset < firstPool.length; firstOffset += 1) {
+    const first = firstPool[(firstStart + firstOffset) % firstPool.length];
+    for (let lastOffset = 0; lastOffset < lastPool.length; lastOffset += 1) {
+      const last = lastPool[(lastStart + lastOffset) % lastPool.length];
+      const fullName = `${first} ${last}`;
+      if (!usedFullNames.has(fullName)) return fullName;
+    }
+  }
+  return `${firstPool[firstStart]} ${lastPool[lastStart]}`;
 }
 
 export function pronounsForRacer(identity) {
@@ -4286,8 +4314,11 @@ export function createLeagueStore(path = ":memory:") {
     const specialty = PIT_COACH_SPECIALTIES.find((option) => option.key === specialtyKey);
     if (!specialty) throw new Error("Unknown Pit Coach specialty.");
     const existing = readPitCoachSelection.get(season, teamId);
+    const currentSeasonCoachNames = readPitCoachSelections.all(season)
+      .filter((selection) => selection.team_id !== teamId)
+      .map((selection) => selection.coach_name);
     const coachName = existing?.coach_name
-      || generatePitCoachName(`${season}:${teamId}:${specialtyKey}`);
+      || generatePitCoachName(`${season}:${teamId}:${specialtyKey}`, currentSeasonCoachNames);
     upsertPitCoachSelection.run(
       season,
       teamId,
