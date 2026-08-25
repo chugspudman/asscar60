@@ -3265,10 +3265,20 @@ function updateTradeAlertBadges() {
 
 function currentDraftVoteAlertKeys() {
   const keys = [];
-  if (state.draft.status === "not_started" && state.draft.initiation?.allTeamsAssigned) {
+  const openingVoted = state.draft.initiation?.votes?.some((vote) => (
+    vote.team_id === managedTeamId()
+  ));
+  if (
+    state.draft.status === "not_started"
+    && state.draft.initiation?.allTeamsAssigned
+    && !openingVoted
+  ) {
     keys.push(`opening:${state.draft.initiation.season || state.raceCenter?.season || 1}`);
   }
-  if (state.rookieDraft.status === "voting") {
+  const rookieVoted = state.rookieDraft.initiation?.votes?.some((vote) => (
+    vote.team_id === managedTeamId()
+  ));
+  if (state.rookieDraft.status === "voting" && !rookieVoted) {
     keys.push(`rookie:${state.rookieDraft.season || state.raceCenter?.season || 1}`);
   }
   return keys;
@@ -3291,20 +3301,20 @@ function refreshDraftVoteAlerts() {
   const activeSet = new Set(activeKeys);
   state.noticedDraftVoteAlertKeys = state.noticedDraftVoteAlertKeys.filter((key) => activeSet.has(key));
   state.unreadDraftVoteAlertIds = (state.unreadDraftVoteAlertIds || []).filter((key) => activeSet.has(key));
-  state.clearedDraftVoteAlertKeys = activeKeys.filter((key) => !state.unreadDraftVoteAlertIds.includes(key));
+  state.clearedDraftVoteAlertKeys = [];
   updateDraftVoteAlertBadges();
 }
 
 function unhandledDraftVoteAlertKeys() {
-  return (state.draftVoteAlertKeys || []).filter((key) => !state.clearedDraftVoteAlertKeys.includes(key));
+  return state.draftVoteAlertKeys || [];
 }
 
 function hasOfficeDraftVoteAlert() {
-  return unhandledDraftVoteAlertKeys().some((key) => !state.noticedDraftVoteAlertKeys.includes(key));
+  return Boolean(unhandledDraftVoteAlertKeys().length);
 }
 
 function hasDraftSubnavVoteAlert() {
-  return unhandledDraftVoteAlertKeys().some((key) => state.noticedDraftVoteAlertKeys.includes(key));
+  return Boolean(unhandledDraftVoteAlertKeys().length);
 }
 
 function currentAdminRequirementAlertKey() {
@@ -3315,7 +3325,7 @@ function currentAdminRequirementAlertKey() {
 
 function hasOfficeAdminRequirementAlert() {
   const key = currentAdminRequirementAlertKey();
-  return Boolean(key) && !state.noticedAdminRequirementAlertKeys.includes(key);
+  return Boolean(key);
 }
 
 function markAdminRequirementOfficeSeen() {
@@ -3355,31 +3365,7 @@ function markDraftVoteAlertOfficeSeen() {
 }
 
 function clearDraftVoteAlert() {
-  const keys = unhandledDraftVoteAlertKeys();
-  state.noticedDraftVoteAlertKeys = [
-    ...new Set([...state.noticedDraftVoteAlertKeys, ...keys]),
-  ];
-  state.clearedDraftVoteAlertKeys = [
-    ...new Set([...state.clearedDraftVoteAlertKeys, ...keys]),
-  ];
-  state.unreadDraftVoteAlertIds = (state.unreadDraftVoteAlertIds || []).filter((key) => !keys.includes(key));
   updateDraftVoteAlertBadges();
-  if (keys.length) {
-    fetch("/api/draft/alerts/seen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alertIds: keys }),
-    })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((result) => {
-        if (!result) return;
-        state.unreadDraftVoteAlertIds = result.unreadDraftVoteAlertIds || [];
-        refreshDraftVoteAlerts();
-      })
-      .catch(() => {
-        // Draft vote badges are cosmetic; failing to save read state should not block navigation.
-      });
-  }
 }
 
 async function loadDevelopment() {
