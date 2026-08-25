@@ -364,6 +364,7 @@ let raceCenterInterval = null;
 let draftInterval = null;
 let rookieDraftInterval = null;
 let martyrInterval = null;
+let darkSacrificeInterval = null;
 let transactionsInterval = null;
 let mediaInterval = null;
 let tickerResizeFrame = null;
@@ -1612,6 +1613,7 @@ function showSeasonCeremony({ automatic = false } = {}) {
   const champions = state.raceCenter.champions;
   if (!champions || elements.seasonCeremonyDialog.open) return;
   if (state.darkSacrifice.status === "resolved" && !darkSacrificeResultSeen()) return;
+  if (elements.darkSacrificeResultDialog?.open) return;
   if (automatic) {
     try {
       if (localStorage.getItem(seasonCeremonyStorageKey()) === "true") return;
@@ -3313,19 +3315,35 @@ function showDarkSacrificeResult({ automatic = false } = {}) {
   const team = teams.find((item) => item.id === managedTeamId()) || teams[0];
   elements.darkSacrificeResultDialog.style.setProperty("--sacrifice-color", team.color);
   elements.darkSacrificeResultDialog.style.setProperty("--sacrifice-ink", contrastColor(team.color));
+  const heading = elements.darkSacrificeResultHeading
+    || elements.darkSacrificeResultDialog.querySelector("h2");
+  const closeButton = elements.closeDarkSacrificeResult
+    || elements.darkSacrificeResultDialog.querySelector("button");
   if (sacrifices.length) {
-    elements.darkSacrificeResultHeading.textContent = "Into the End they were cast, these Dark Sacrifices:";
-    elements.closeDarkSacrificeResult.textContent = "Stewards forgive us...";
-    elements.darkSacrificeResultMessage.innerHTML = sacrifices.map((sacrifice) => {
+    if (heading) heading.textContent = "Into the End they were cast, these Dark Sacrifices:";
+    if (closeButton) closeButton.textContent = "Stewards forgive us...";
+    if (elements.darkSacrificeResultMessage) elements.darkSacrificeResultMessage.innerHTML = sacrifices.map((sacrifice) => {
       const team = teams.find((item) => item.id === sacrifice.teamId);
       return `${escapeHtml(sacrifice.racerName)} - ${escapeHtml(team?.short || sacrifice.teamId)}`;
     }).join("<br>");
   } else {
-    elements.darkSacrificeResultHeading.textContent = "None succumbed to the drone of the Decelerator today";
-    elements.closeDarkSacrificeResult.textContent = "Stewards bless us!";
-    elements.darkSacrificeResultMessage.textContent = "";
+    if (heading) heading.textContent = "None succumbed to the drone of the Decelerator today";
+    if (closeButton) closeButton.textContent = "Stewards bless us!";
+    if (elements.darkSacrificeResultMessage) elements.darkSacrificeResultMessage.textContent = "";
   }
-  elements.darkSacrificeResultDialog.showModal();
+  if (elements.darkSacrificeDialog?.open) elements.darkSacrificeDialog.close();
+  if (elements.seasonCeremonyDialog?.open) elements.seasonCeremonyDialog.close();
+  let openAttempts = 0;
+  const openResultDialog = () => {
+    if (elements.darkSacrificeResultDialog.open) return;
+    try {
+      elements.darkSacrificeResultDialog.showModal();
+    } catch {
+      openAttempts += 1;
+      if (openAttempts < 20) setTimeout(openResultDialog, 50);
+    }
+  };
+  openResultDialog();
   return true;
 }
 
@@ -4841,7 +4859,7 @@ async function syncRaceCenter() {
     renderRaceControls();
     if (priorRelayLockReason !== nextRelayLockReason) renderLineupEditor();
     await renderIdleRaceFeed();
-    if (darkSacrificeNewlyResolved) showDarkSacrificeResult({ automatic: true });
+    if (state.darkSacrifice.status === "resolved") showDarkSacrificeResult({ automatic: true });
     if (state.raceCenter.seasonComplete && state.raceCenter.champions) {
       showSeasonCeremony({ automatic: true });
     }
@@ -4926,6 +4944,49 @@ async function syncInitiationMartyr() {
   renderRaceControls();
 }
 
+function darkSacrificeSyncSignature(darkSacrifice = state.darkSacrifice) {
+  return [
+    darkSacrifice.status,
+    darkSacrifice.choiceCount || 0,
+    darkSacrifice.selected?.racer_id || "",
+    darkSacrifice.resolvedAt || "",
+    (darkSacrifice.choices || []).map((choice) => `${choice.team_id}:${choice.racer_id || "none"}`).sort().join(","),
+  ].join("|");
+}
+
+async function syncDarkSacrifice() {
+  const shouldSync = state.raceCenter.raceScheduleComplete
+    || ["voting", "resolved"].includes(state.darkSacrifice.status);
+  if (!shouldSync) return;
+  const previousSignature = darkSacrificeSyncSignature();
+  const wasResolved = state.darkSacrifice.status === "resolved";
+  await loadDarkSacrifice();
+  const nextSignature = darkSacrificeSyncSignature();
+  if (previousSignature !== nextSignature) {
+    await Promise.all([
+      loadRaceCenter(),
+      loadLeagueState(),
+      loadRacerDirectory(),
+      loadInMemoriam(),
+    ]);
+    renderTeamProfile();
+    renderLeague();
+    renderRacerDirectories();
+    renderInMemoriam();
+    renderRaceArchive();
+    renderRaceControls();
+    renderNewsTicker();
+  }
+  if (state.darkSacrifice.status === "voting") {
+    renderDarkSacrificeChoice();
+    return;
+  }
+  if (state.darkSacrifice.status === "resolved") {
+    if (elements.darkSacrificeDialog.open) elements.darkSacrificeDialog.close();
+    showDarkSacrificeResult({ automatic: true });
+  }
+}
+
 async function syncRookieDraft() {
   if (!["voting", "active", "releases"].includes(state.rookieDraft.status)) return;
   const previousSignature = [
@@ -4997,6 +5058,7 @@ async function startApp() {
     draftInterval = setInterval(syncDraft, 2_000);
     rookieDraftInterval = setInterval(syncRookieDraft, 2_000);
     martyrInterval = setInterval(syncInitiationMartyr, 2_000);
+    darkSacrificeInterval = setInterval(syncDarkSacrifice, 2_000);
     transactionsInterval = setInterval(syncTransactions, 15_000);
     mediaInterval = setInterval(syncMediaEntries, 15_000);
     appStarted = true;
@@ -5066,6 +5128,7 @@ elements.confirmLogout.addEventListener("click", async () => {
   clearInterval(draftInterval);
   clearInterval(rookieDraftInterval);
   clearInterval(martyrInterval);
+  clearInterval(darkSacrificeInterval);
   clearInterval(raceCenterInterval);
   clearInterval(transactionsInterval);
   clearInterval(mediaInterval);
