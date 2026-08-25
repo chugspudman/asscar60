@@ -2494,6 +2494,7 @@ export function createLeagueStore(path = ":memory:") {
   function repairTeamRelayPlan(teamId) {
     const roster = readRoster.all(teamId);
     if (roster.length === 0) return;
+    if (roster.length < 6) return;
     const validDriverIds = new Set(roster.map((racer) => racer.id));
     const availableDriverIds = roster.map((racer) => racer.id);
     const usedDriverIds = new Set();
@@ -3211,6 +3212,12 @@ export function createLeagueStore(path = ":memory:") {
       carNames,
       cars,
       rosters,
+      pitCoaches: Object.fromEntries(readPitCoachSelections.all(getActiveSeason()).map((selection) => [
+        selection.team_id,
+        {
+          coachName: selection.coach_name,
+        },
+      ])),
       brands: readBrands.all(),
       brandColors: BRAND_COLORS,
     };

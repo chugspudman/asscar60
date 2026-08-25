@@ -122,6 +122,7 @@ const state = {
     recipientTeamId: null,
     recipientLocked: false,
   },
+  pitCoaches: {},
   inMemoriam: [],
   development: {
     week: 1,
@@ -1885,10 +1886,12 @@ function renderLeague() {
     const racers = state.racerDirectory.signed.filter((racer) => racer.team_id === team.id);
     const points = pointsByTeam.get(team.id) || 0;
     const titles = state.raceCenter.teamChampionshipWins?.[team.id] || 0;
+    const pitCoachName = state.pitCoaches?.[team.id]?.coachName || "";
     return `
       <article class="league-card" style="--team-color:${team.color}">
         <span class="code">${escapeHtml(team.short)}</span>
         <h3>${escapeHtml(team.name)}</h3>
+        ${pitCoachName ? `<p class="league-pit-coach"><span>Pit Coach</span><strong>${escapeHtml(pitCoachName)}</strong></p>` : ""}
         <div class="league-team-record">
           <span><strong>${points}</strong> Current points</span>
           <span><strong>${titles}</strong> Championship wins</span>
@@ -3152,6 +3155,7 @@ async function loadLeagueState() {
   state.lineups = { ...defaultLineups, ...saved.lineups };
   state.carNames = { ...defaultCarNamesByTeam, ...saved.carNames };
   state.cars = saved.cars || {};
+  state.pitCoaches = saved.pitCoaches || {};
   applyTeamTheme();
 }
 

@@ -1014,6 +1014,9 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .league-card::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 6px; background: var(--team-color); }
 .league-card .code { font: 500 11px "DM Mono", monospace; color: var(--muted); }
 .league-card h3 { font-size: 23px; letter-spacing: -.04em; margin: 18px 0 16px; }
+.league-pit-coach { display: grid; gap: 3px; margin: -6px 0 14px; padding: 9px 10px; border: 1px solid var(--line); background: var(--tile); }
+.league-pit-coach span { color: var(--muted); font: 700 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .08em; }
+.league-pit-coach strong { color: var(--ink); font: 800 14px "Inter", sans-serif; }
 .league-team-record { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .league-team-record span { min-height: 70px; display: grid; align-content: center; padding: 10px; background: var(--tile); color: var(--muted); font: 500 9px "DM Mono", monospace; text-transform: uppercase; }
 .league-team-record strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: 21px; }
