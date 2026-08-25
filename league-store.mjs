@@ -23,6 +23,7 @@ const SEASON_RACES = RACES_PER_WEEK * WEEKS_PER_SEASON;
 const QUALIFIER_LOCK_MS = 10 * 60 * 1000;
 const MVD_OPENER_BONUS_UNITS = 0.01 * TOTAL_LAPS;
 const MVD_CLOSER_BONUS_UNITS = 0.02 * TOTAL_LAPS;
+const DARK_SACRIFICE_BONUS_POINTS = 100;
 const LEAGUE_CODE = "code";
 const STEWARD_USERNAME = "devman";
 const STEWARD_PASSWORD = "devman";
@@ -65,7 +66,7 @@ const PIT_COACH_SPECIALTIES = [
   {
     key: "specialty-8",
     name: "Specialty 8",
-    description: "If you pick your highest-scoring driver as a Dark Sacrifice at the end of the season, you get the normal +50 to your season score and the curse next season, but you are also given first pick in next season's opening draft.",
+    description: "If you pick your highest-scoring driver as a Dark Sacrifice at the end of the season, you get the normal +100 to your season score and the curse next season, but you are also given first pick in next season's opening draft.",
   },
   {
     key: "specialty-9",
@@ -940,7 +941,7 @@ function generateRaceRecap(race, context = {}) {
   return `${paragraphOneParts.join(" ")}\n\n${paragraphTwoParts.join(" ")}`;
 }
 
-function calculateSeasonChampionships(raceRows) {
+function calculateSeasonChampionships(raceRows, darkSacrificeBonuses = {}) {
   const teamRecords = new Map(teams.map((team) => [team.id, {
     teamId: team.id,
     pointUnits: 0,
@@ -990,6 +991,10 @@ function calculateSeasonChampionships(raceRows) {
       }
     }
   }
+  for (const [teamId, bonusPoints] of Object.entries(darkSacrificeBonuses || {})) {
+    const teamRecord = teamRecords.get(teamId);
+    if (teamRecord) teamRecord.pointUnits += Number(bonusPoints || 0) * TOTAL_LAPS;
+  }
 
   return {
     teams: rankChampionshipRecords([...teamRecords.values()]),
@@ -997,7 +1002,7 @@ function calculateSeasonChampionships(raceRows) {
   };
 }
 
-function calculateTeamChampionshipWins(raceRows) {
+function calculateTeamChampionshipWins(raceRows, bonusProvider = () => ({})) {
   const racesBySeason = new Map();
   for (const raceRow of raceRows) {
     const seasonRaces = racesBySeason.get(raceRow.season) || [];
@@ -1007,7 +1012,10 @@ function calculateTeamChampionshipWins(raceRows) {
   const wins = Object.fromEntries(teams.map((team) => [team.id, 0]));
   for (const seasonRaces of racesBySeason.values()) {
     if (seasonRaces.length < SEASON_RACES) continue;
-    for (const standing of calculateSeasonChampionships(seasonRaces).teams) {
+    for (const standing of calculateSeasonChampionships(
+      seasonRaces,
+      bonusProvider(seasonRaces[0].season),
+    ).teams) {
       if (standing.rank !== 1) break;
       wins[standing.teamId] += 1;
     }
@@ -1364,6 +1372,21 @@ export function createLeagueStore(path = ":memory:") {
       season INTEGER NOT NULL REFERENCES initiation_martyr_state(season) ON DELETE CASCADE,
       team_id TEXT NOT NULL,
       racer_id TEXT NOT NULL REFERENCES racers(id),
+      voted_at TEXT NOT NULL,
+      PRIMARY KEY (season, team_id)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS dark_sacrifice_state (
+      season INTEGER PRIMARY KEY,
+      status TEXT NOT NULL CHECK (status IN ('voting', 'resolved')),
+      created_at TEXT NOT NULL,
+      resolved_at TEXT
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS dark_sacrifice_votes (
+      season INTEGER NOT NULL REFERENCES dark_sacrifice_state(season) ON DELETE CASCADE,
+      team_id TEXT NOT NULL,
+      racer_id TEXT REFERENCES racers(id),
       voted_at TEXT NOT NULL,
       PRIMARY KEY (season, team_id)
     ) STRICT;
@@ -2247,6 +2270,45 @@ export function createLeagueStore(path = ":memory:") {
   const markRacerAsMartyr = database.prepare(`
     UPDATE racers SET source = 'martyr' WHERE id = ? AND team_id IS NULL
   `);
+  const insertDarkSacrificeState = database.prepare(`
+    INSERT OR IGNORE INTO dark_sacrifice_state (
+      season, status, created_at, resolved_at
+    ) VALUES (?, 'voting', ?, NULL)
+  `);
+  const readDarkSacrificeState = database.prepare(`
+    SELECT * FROM dark_sacrifice_state WHERE season = ?
+  `);
+  const readDarkSacrificeVotes = database.prepare(`
+    SELECT dark_sacrifice_votes.season, dark_sacrifice_votes.team_id,
+           dark_sacrifice_votes.racer_id, dark_sacrifice_votes.voted_at,
+           racers.name AS racer_name, racers.pronouns AS racer_pronouns
+    FROM dark_sacrifice_votes
+    LEFT JOIN racers ON racers.id = dark_sacrifice_votes.racer_id
+    WHERE dark_sacrifice_votes.season = ?
+    ORDER BY dark_sacrifice_votes.voted_at, dark_sacrifice_votes.team_id
+  `);
+  const readResolvedDarkSacrifices = database.prepare(`
+    SELECT dark_sacrifice_votes.season, dark_sacrifice_votes.team_id,
+           dark_sacrifice_votes.racer_id, dark_sacrifice_votes.voted_at,
+           racers.name AS racer_name, racers.pronouns AS racer_pronouns
+    FROM dark_sacrifice_votes
+    JOIN dark_sacrifice_state ON dark_sacrifice_state.season = dark_sacrifice_votes.season
+    JOIN racers ON racers.id = dark_sacrifice_votes.racer_id
+    WHERE dark_sacrifice_state.status = 'resolved'
+    ORDER BY dark_sacrifice_votes.season DESC, dark_sacrifice_votes.voted_at
+  `);
+  const insertDarkSacrificeVote = database.prepare(`
+    INSERT INTO dark_sacrifice_votes (season, team_id, racer_id, voted_at)
+    VALUES (?, ?, ?, ?)
+  `);
+  const resolveDarkSacrificeState = database.prepare(`
+    UPDATE dark_sacrifice_state
+    SET status = 'resolved', resolved_at = ?
+    WHERE season = ?
+  `);
+  const markSignedRacerAsMartyr = database.prepare(`
+    UPDATE racers SET team_id = NULL, source = 'martyr' WHERE id = ?
+  `);
   const readRookieDraftState = database.prepare(`
     SELECT * FROM rookie_draft_state WHERE season = ?
   `);
@@ -2918,6 +2980,8 @@ export function createLeagueStore(path = ":memory:") {
   const clearDraftInitiationVotes = database.prepare("DELETE FROM draft_initiation_votes WHERE season = ?");
   const clearDraftRetentionSelections = database.prepare("DELETE FROM draft_retention_selections WHERE season = ?");
   const clearPitCoachSelections = database.prepare("DELETE FROM pit_coach_selections WHERE season = ?");
+  const deleteDarkSacrificeVotesForSeason = database.prepare("DELETE FROM dark_sacrifice_votes WHERE season = ?");
+  const deleteDarkSacrificeStateForSeason = database.prepare("DELETE FROM dark_sacrifice_state WHERE season = ?");
   const cancelPendingTrades = database.prepare(`
     UPDATE trade_offers
     SET status = 'cancelled', resolved_at = ?
@@ -3247,6 +3311,7 @@ export function createLeagueStore(path = ":memory:") {
           coachName: selection.coach_name,
         },
       ])),
+      stainOfSinTeamIds: stainOfSinTeamIds(getActiveSeason()),
       brands: readBrands.all(),
       brandColors: BRAND_COLORS,
     };
@@ -3625,6 +3690,110 @@ export function createLeagueStore(path = ":memory:") {
     };
   }
 
+  function ensureDarkSacrificeState(season = getActiveSeason(), now = new Date()) {
+    if (countSeasonRaces.get(season).count < SEASON_RACES) return null;
+    insertDarkSacrificeState.run(season, now.toISOString());
+    return readDarkSacrificeState.get(season);
+  }
+
+  function darkSacrificeBonusesForSeason(season) {
+    const state = readDarkSacrificeState.get(season);
+    if (state?.status !== "resolved") return {};
+    const bonuses = {};
+    for (const vote of readDarkSacrificeVotes.all(season)) {
+      if (vote.racer_id) bonuses[vote.team_id] = (bonuses[vote.team_id] || 0) + DARK_SACRIFICE_BONUS_POINTS;
+    }
+    return bonuses;
+  }
+
+  function stainOfSinTeamIds(season = getActiveSeason()) {
+    if (season <= 1) return [];
+    const currentSeasonDarkSacrifice = readDarkSacrificeState.get(season);
+    if (
+      countSeasonRaces.get(season).count >= SEASON_RACES
+      && currentSeasonDarkSacrifice?.status === "resolved"
+    ) return [];
+    return [...new Set(
+      readResolvedDarkSacrifices.all()
+        .filter((vote) => vote.season === season - 1 && vote.racer_id)
+        .map((vote) => vote.team_id),
+    )];
+  }
+
+  function getDarkSacrifice(season = getActiveSeason(), session = {}) {
+    const state = readDarkSacrificeState.get(season);
+    if (!state) {
+      return {
+        season,
+        status: countSeasonRaces.get(season).count >= SEASON_RACES ? "not_started" : "unavailable",
+        choices: [],
+        candidates: [],
+        selected: null,
+        sacrifices: [],
+      };
+    }
+    const choices = readDarkSacrificeVotes.all(season);
+    const selected = session.teamId
+      ? choices.find((choice) => choice.team_id === session.teamId) || null
+      : null;
+    return {
+      season,
+      status: state.status,
+      choices,
+      choiceCount: choices.length,
+      requiredChoices: teams.length,
+      candidates: state.status === "voting" && session.teamId
+        ? readRoster.all(session.teamId).map(publicRacer)
+        : [],
+      selected,
+      sacrifices: choices
+        .filter((choice) => choice.racer_id)
+        .map((choice) => ({
+          teamId: choice.team_id,
+          racerId: choice.racer_id,
+          racerName: choice.racer_name,
+          pronouns: choice.racer_pronouns,
+          votedAt: choice.voted_at,
+        })),
+      resolvedAt: state.resolved_at,
+    };
+  }
+
+  function voteForDarkSacrifice(teamId, racerId = null, season = getActiveSeason()) {
+    if (!teams.some((team) => team.id === teamId)) throw new Error("Unknown team.");
+    const state = readDarkSacrificeState.get(season);
+    if (state?.status !== "voting") throw new Error("The Dark Sacrifice choice is not active.");
+    if (readDarkSacrificeVotes.all(season).some((vote) => vote.team_id === teamId)) {
+      throw new Error("That team has already made its Dark Sacrifice choice.");
+    }
+    const chosenRacerId = racerId ? String(racerId) : null;
+    if (chosenRacerId) {
+      const racer = findRosterRacer.get(chosenRacerId);
+      if (!racer || racer.team_id !== teamId) {
+        throw new Error("The Dark Sacrifice must be one of your team's signed drivers.");
+      }
+    }
+
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const now = new Date().toISOString();
+      insertDarkSacrificeVote.run(season, teamId, chosenRacerId, now);
+      const choices = readDarkSacrificeVotes.all(season);
+      if (choices.length >= teams.length) {
+        for (const choice of choices) {
+          if (choice.racer_id) markSignedRacerAsMartyr.run(choice.racer_id);
+        }
+        resolveDarkSacrificeState.run(now, season);
+        finalizeSeasonHistory(season);
+      }
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return getDarkSacrifice(season, { teamId });
+  }
+
   function getInMemoriam() {
     const careerByRacer = new Map();
     const allCareerRaces = readAllRacesForCareer.all()
@@ -3653,7 +3822,7 @@ export function createLeagueStore(path = ":memory:") {
         careerByRacer.set(racerId, career);
       }
     }
-    return readResolvedMartyrs.all().map((martyr) => ({
+    const initiationMartyrs = readResolvedMartyrs.all().map((martyr) => ({
       racerId: martyr.racer_id,
       name: martyr.racer_name,
       pronouns: martyr.racer_pronouns,
@@ -3663,6 +3832,18 @@ export function createLeagueStore(path = ":memory:") {
       careerLaps: careerByRacer.get(martyr.racer_id)?.laps || 0,
       careerPodiums: careerByRacer.get(martyr.racer_id)?.podiums || 0,
     }));
+    const darkSacrifices = readResolvedDarkSacrifices.all().map((sacrifice) => ({
+      racerId: sacrifice.racer_id,
+      name: sacrifice.racer_name,
+      pronouns: sacrifice.racer_pronouns,
+      season: sacrifice.season,
+      cause: `Season ${sacrifice.season} Dark Sacrifice by ${teams.find((team) => team.id === sacrifice.team_id)?.short || sacrifice.team_id}`,
+      diedAt: sacrifice.voted_at,
+      careerLaps: careerByRacer.get(sacrifice.racer_id)?.laps || 0,
+      careerPodiums: careerByRacer.get(sacrifice.racer_id)?.podiums || 0,
+    }));
+    return [...initiationMartyrs, ...darkSacrifices]
+      .sort((a, b) => String(b.diedAt).localeCompare(String(a.diedAt)));
   }
 
   function voteForInitiationMartyr(teamId, racerId, season = 1) {
@@ -5448,19 +5629,50 @@ export function createLeagueStore(path = ":memory:") {
     }));
   }
 
+  function darkSacrificeFirstPickTeamIds(priorSeason) {
+    const state = readDarkSacrificeState.get(priorSeason);
+    if (state?.status !== "resolved") return [];
+    const sacrifices = readDarkSacrificeVotes.all(priorSeason).filter((vote) => vote.racer_id);
+    if (!sacrifices.length) return [];
+    const coachByTeam = Object.fromEntries(readPitCoachSelections.all(priorSeason).map((selection) => [
+      selection.team_id,
+      selection.specialty_key,
+    ]));
+    const seasonRaces = readSeasonRacesForChampionship.all(priorSeason);
+    const mvds = calculateSeasonChampionships(seasonRaces).mvds;
+    return sacrifices
+      .filter((sacrifice) => coachByTeam[sacrifice.team_id] === "specialty-8")
+      .filter((sacrifice) => {
+        const teamDrivers = mvds.filter((standing) => standing.teamId === sacrifice.team_id);
+        if (!teamDrivers.length) return false;
+        const bestPoints = Math.max(...teamDrivers.map((standing) => standing.points));
+        return teamDrivers.some((standing) => (
+          standing.racerId === sacrifice.racer_id && standing.points === bestPoints
+        ));
+      })
+      .map((sacrifice) => sacrifice.team_id);
+  }
+
   function openingDraftOrder(season = getActiveSeason()) {
     if (season <= 1) return teams.map((team) => team.id);
     const priorSeason = getSeasonHistory().find((entry) => entry.season === season - 1);
     if (!priorSeason) return teams.map((team) => team.id);
-    return [...priorSeason.teamStandings]
+    const reverseStandings = [...priorSeason.teamStandings]
       .sort((a, b) => b.rank - a.rank)
       .map((standing) => standing.teamId);
+    const firstPickTeams = darkSacrificeFirstPickTeamIds(season - 1)
+      .sort((a, b) => reverseStandings.indexOf(a) - reverseStandings.indexOf(b));
+    return [...firstPickTeams, ...reverseStandings.filter((teamId) => !firstPickTeams.includes(teamId))];
   }
 
   function finalizeSeasonHistory(season) {
     const seasonRaces = readSeasonRacesForChampionship.all(season);
     if (seasonRaces.length < SEASON_RACES) return;
-    const standings = calculateSeasonChampionships(seasonRaces);
+    if (getDarkSacrifice(season).status !== "resolved") return;
+    const standings = calculateSeasonChampionships(
+      seasonRaces,
+      darkSacrificeBonusesForSeason(season),
+    );
     insertSeasonHistory.run(
       season,
       JSON.stringify(standings.teams),
@@ -5485,8 +5697,10 @@ export function createLeagueStore(path = ":memory:") {
       .filter((race) => race.id !== activeRaceId);
     const completedSeasonRaces = completedAllRaces
       .filter((race) => race.season === season);
-    const seasonComplete = completedSeasonRaces.length >= SEASON_RACES;
-    const nextRaceNumber = seasonComplete ? null : seasonRacesRun + 1;
+    const raceScheduleComplete = completedSeasonRaces.length >= SEASON_RACES;
+    const darkSacrifice = getDarkSacrifice(season);
+    const seasonComplete = raceScheduleComplete && darkSacrifice.status === "resolved";
+    const nextRaceNumber = raceScheduleComplete ? null : seasonRacesRun + 1;
     const courseSchedule = ensureSeasonCourseSchedule(season);
     const trackName = courseNameForSeasonWeek(season, week);
     const forecastSeed = `season-${season}-week-${week}-race-${nextRaceNumber}`;
@@ -5495,9 +5709,12 @@ export function createLeagueStore(path = ":memory:") {
       ? firstRaceAtForDraft(draft.started_at)
       : null;
     const latestSeasonRace = readLatestSeasonRace.get(season);
-    const seasonChampionships = calculateSeasonChampionships(
-      completedSeasonRaces,
-    );
+    const seasonChampionships = raceScheduleComplete && darkSacrifice.status !== "resolved"
+      ? { teams: [], mvds: [] }
+      : calculateSeasonChampionships(
+        completedSeasonRaces,
+        darkSacrificeBonusesForSeason(season),
+      );
     const lapPerformance = buildLapPerformanceSummaries();
     const forecastCondition = nextRaceNumber
       ? selectRaceCondition(trackName, forecastSeed)
@@ -5558,11 +5775,14 @@ export function createLeagueStore(path = ":memory:") {
       forecastCondition,
       activeRaceId,
       raceActive: activeRaceId !== null,
+      raceScheduleComplete,
       seasonComplete,
+      darkSacrifice,
+      stainOfSinTeamIds: stainOfSinTeamIds(season),
       races: readRaceSummaries.all().filter((race) => race.id !== activeRaceId),
       championship: seasonChampionships.teams,
       mvdStandings: seasonChampionships.mvds,
-      teamChampionshipWins: calculateTeamChampionshipWins(completedAllRaces),
+      teamChampionshipWins: calculateTeamChampionshipWins(completedAllRaces, darkSacrificeBonusesForSeason),
       lapPerformance: {
         courseRoleMedians: lapPerformance.courseRoleMedians,
       },
@@ -5618,11 +5838,17 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function pitCoachRaceContext(season) {
-    return Object.fromEntries(readPitCoachSelections.all(season).map((selection) => {
-      const roster = readRoster.all(selection.team_id);
-      return [selection.team_id, {
-        specialtyKey: selection.specialty_key,
+    const stainedTeams = new Set(stainOfSinTeamIds(season));
+    const selections = Object.fromEntries(readPitCoachSelections.all(season).map((selection) => [
+      selection.team_id,
+      selection,
+    ]));
+    return Object.fromEntries(teams.map((team) => {
+      const roster = readRoster.all(team.id);
+      return [team.id, {
+        specialtyKey: selections[team.id]?.specialty_key || null,
         noControlAbove8: roster.every((racer) => Number(racer.control) <= 8),
+        stainOfSin: stainedTeams.has(team.id),
       }];
     }));
   }
@@ -5815,7 +6041,7 @@ export function createLeagueStore(path = ":memory:") {
       updateRaceRecap.run(generateRaceRecap(race, raceDebutContext(race)), race.id);
       setActiveRace.run(null, new Date().toISOString());
       if (countSeasonRaces.get(race.season).count >= SEASON_RACES) {
-        finalizeSeasonHistory(race.season);
+        ensureDarkSacrificeState(race.season);
       }
       database.exec("COMMIT");
     } catch (error) {
@@ -5862,6 +6088,8 @@ export function createLeagueStore(path = ":memory:") {
       deleteRookieDraftStateForSeason.run(season);
       deleteMartyrVotesForSeason.run(season);
       deleteMartyrStateForSeason.run(season);
+      deleteDarkSacrificeVotesForSeason.run(season);
+      deleteDarkSacrificeStateForSeason.run(season);
       deleteSeasonHistoryForSeason.run(season);
       clearDraftRetentionSelections.run(season);
       clearPitCoachSelections.run(season);
@@ -5895,6 +6123,8 @@ export function createLeagueStore(path = ":memory:") {
       deleteRookieDraftStateForSeason.run(season);
       deleteMartyrVotesForSeason.run(season);
       deleteMartyrStateForSeason.run(season);
+      deleteDarkSacrificeVotesForSeason.run(season);
+      deleteDarkSacrificeStateForSeason.run(season);
       deleteSeasonHistoryForSeason.run(season);
       deleteRaceParticipationForSeason.run(firstWeekKey, lastWeekKey);
       deleteUpgradeChoicesForSeason.run(firstWeekKey, lastWeekKey);
@@ -6301,6 +6531,7 @@ export function createLeagueStore(path = ":memory:") {
     getActiveSeason,
     getLeagueState,
     getDraft,
+    getDarkSacrifice,
     getInitiationMartyr,
     getInMemoriam,
     getMediaEntries,
@@ -6349,6 +6580,7 @@ export function createLeagueStore(path = ":memory:") {
     updateMediaEntry,
     voteToStartRookieDraft,
     voteToStartDraft,
+    voteForDarkSacrifice,
     voteForInitiationMartyr,
   };
 }

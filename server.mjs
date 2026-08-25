@@ -299,6 +299,26 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && requestedPath === "/api/dark-sacrifice") {
+      sendJson(response, 200, store.getDarkSacrifice(store.getActiveSeason(), currentSession(request) || {}));
+      return;
+    }
+
+    if (request.method === "POST" && requestedPath === "/api/dark-sacrifice/choices") {
+      const input = await readJson(request);
+      const manager = requireManager(request);
+      sendJson(
+        response,
+        201,
+        store.voteForDarkSacrifice(
+          manager.teamId,
+          input.racerId ? String(input.racerId) : null,
+          store.getActiveSeason(),
+        ),
+      );
+      return;
+    }
+
     if (request.method === "GET" && requestedPath === "/api/in-memoriam") {
       sendJson(response, 200, store.getInMemoriam());
       return;

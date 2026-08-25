@@ -183,6 +183,16 @@ function applySpeedMadness(entry, driver) {
   bonuses.stamina = Math.max(bonuses.stamina || 0, 10 - driver.stamina);
 }
 
+function chooseStrangeEffect(effects, entry, random) {
+  if (!entry.pitCoach?.stainOfSin) {
+    return effects[Math.floor(random() * effects.length)];
+  }
+  const weighted = effects.flatMap((effect) => (
+    effect.tone === "bad" ? [effect, effect] : [effect]
+  ));
+  return weighted[Math.floor(random() * weighted.length)];
+}
+
 function mergeRaceOrder(currentOrder, activeOrder) {
   const activeSet = new Set(activeOrder);
   let activeIndex = 0;
@@ -963,7 +973,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
       : possibleEffects;
     if (!effects.length) return;
     entry.pendingStrange = {
-      ...effects[Math.floor(random() * effects.length)],
+      ...chooseStrangeEffect(effects, entry, random),
       part,
       position: part - 1 + 0.08 + random() * 0.84,
     };

@@ -643,8 +643,13 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .rookie-release-panel .move-field { margin-top: 12px; }
 .rookie-release-panel .primary-button { margin-top: 14px; }
 
-.moves-toolbar { display: grid; grid-template-columns: 220px 1fr minmax(220px, .7fr); gap: 24px; align-items: end; padding: 20px 24px; margin-bottom: 18px; }
+.moves-toolbar { display: grid; grid-template-columns: 1fr minmax(220px, .7fr); gap: 24px; align-items: end; padding: 20px 24px; margin-bottom: 18px; }
+.moves-toolbar #moves-team { display: block; color: var(--text); font-size: 24px; line-height: 1.1; }
 .moves-toolbar .muted, .moves-toolbar .save-message { margin: 0; }
+.moves-pit-coach-header { margin-top: 10px; color: var(--muted); }
+.moves-pit-coach-header div { font: 700 11px var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+.moves-pit-coach-header strong { color: var(--text); font: 800 14px var(--font-body); text-transform: none; letter-spacing: 0; }
+.moves-pit-coach-header p { max-width: 760px; margin: 6px 0 0; color: var(--text-soft); font-size: 13px; line-height: 1.45; }
 .admin-retention-panel { max-width: none; margin: 0 0 18px; }
 .admin-retention-panel[hidden] { display: none; }
 .admin-retention-panel p { color: var(--muted); line-height: 1.6; margin: 0; }
@@ -961,6 +966,22 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .martyr-vote-progress span.voted { border-color: var(--ink); background: var(--acid); color: var(--acid-ink); }
 .martyr-result-card h2 { color: #c40000; }
 .martyr-result-card #martyr-result-message { white-space: pre-line; color: var(--ink); font-size: 16px; font-weight: 700; }
+.dark-sacrifice-card { border-top-color: #7b3bff; }
+.dark-sacrifice-card > p { max-height: 220px; overflow: auto; line-height: 1.55; }
+#submit-dark-sacrifice { background: #6f7772; color: #fff; border-color: #9aa39d; }
+.dark-sacrifice-result-card h2 { color: #b99cff; }
+.dark-sacrifice-result-card #dark-sacrifice-result-message { white-space: pre-line; color: var(--ink); font-size: 16px; font-weight: 700; line-height: 1.6; }
+.stain-of-sin {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 6px;
+  border: 1px solid #7b3bff;
+  color: #d8c8ff;
+  font: 800 9px "DM Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  vertical-align: middle;
+}
 .secondary-button { border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 13px 24px; font-weight: 800; cursor: pointer; }
 .championship-row { display: grid; grid-template-columns: 42px 6px 1fr auto; align-items: center; gap: 12px; min-height: 52px; border-top: 1px solid var(--line); }
 .championship-row:first-child { border-top: 0; background: color-mix(in srgb, var(--acid) 18%, transparent); }

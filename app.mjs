@@ -114,6 +114,13 @@ const state = {
   unreadDraftVoteAlertIds: [],
   noticedAdminRequirementAlertKeys: [],
   martyr: { status: "not_started", candidates: [], votes: [], martyr: null },
+  darkSacrifice: {
+    status: "unavailable",
+    choices: [],
+    candidates: [],
+    selected: null,
+    sacrifices: [],
+  },
   transactions: { freeAgents: [], offers: [], history: [] },
   tradeBuilder: {
     offerItems: [],
@@ -148,6 +155,7 @@ const state = {
     championship: [],
     mvdStandings: [],
     teamChampionshipWins: {},
+    stainOfSinTeamIds: [],
     champions: null,
   },
   activeLeagueRace: null,
@@ -160,6 +168,7 @@ const state = {
   editingMediaEntryId: null,
   brands: {},
   brandColors: [],
+  stainOfSinTeamIds: [],
 };
 
 const elements = {
@@ -249,6 +258,7 @@ const elements = {
   rookieReleaseRacer: document.querySelector("#rookie-release-racer"),
   submitRookieRelease: document.querySelector("#submit-rookie-release"),
   movesTeam: document.querySelector("#moves-team"),
+  movesPitCoachHeader: document.querySelector("#moves-pit-coach-header"),
   movesMessage: document.querySelector("#moves-message"),
   tradeAlertMessage: document.querySelector("#trade-alert-message"),
   tradeOfferItems: document.querySelector("#trade-offer-items"),
@@ -307,6 +317,14 @@ const elements = {
   martyrResultDialog: document.querySelector("#martyr-result-dialog"),
   martyrResultMessage: document.querySelector("#martyr-result-message"),
   closeMartyrResult: document.querySelector("#close-martyr-result"),
+  darkSacrificeDialog: document.querySelector("#dark-sacrifice-dialog"),
+  darkSacrificeCandidate: document.querySelector("#dark-sacrifice-candidate"),
+  darkSacrificeProgress: document.querySelector("#dark-sacrifice-progress"),
+  darkSacrificeMessage: document.querySelector("#dark-sacrifice-message"),
+  submitDarkSacrifice: document.querySelector("#submit-dark-sacrifice"),
+  darkSacrificeResultDialog: document.querySelector("#dark-sacrifice-result-dialog"),
+  darkSacrificeResultMessage: document.querySelector("#dark-sacrifice-result-message"),
+  closeDarkSacrificeResult: document.querySelector("#close-dark-sacrifice-result"),
   seasonCeremonyDialog: document.querySelector("#season-ceremony-dialog"),
   seasonCeremonySeason: document.querySelector("#season-ceremony-season"),
   seasonCeremonyHonors: document.querySelector("#season-ceremony-honors"),
@@ -437,6 +455,10 @@ function restoreNavigationState() {
 function managedTeamLabel() {
   const team = managedTeam();
   return `${team.short} / ${team.name}`;
+}
+
+function managedTeamName() {
+  return managedTeam().name;
 }
 
 async function submitManagerAuth(path, form) {
@@ -1106,6 +1128,8 @@ async function finishRace() {
         loadDevelopment(),
         loadRacerDirectory(),
         loadRookieDraft(),
+        loadDarkSacrifice(),
+        loadInMemoriam(),
       ]);
       renderRaceArchive();
       renderDevelopment();
@@ -1114,6 +1138,9 @@ async function finishRace() {
       renderLeague();
       renderRacerDirectories();
       renderRookieDraft();
+      renderInMemoriam();
+      renderDarkSacrificeChoice();
+      showDarkSacrificeResult({ automatic: true });
       showSeasonCeremony({ automatic: true });
     } catch (error) {
       elements.developmentMessage.textContent = error.message;
@@ -1256,6 +1283,8 @@ function renderRaceControls() {
   const openingSchedule = openingRaceSchedule();
   const awaitingOpeningCeremony = openingSchedule
     && currentDate() < openingSchedule.ceremonyAt;
+  const darkSacrificeRequired = state.raceCenter.raceScheduleComplete
+    && state.darkSacrifice.status === "voting";
   const awaitingScheduledRace = state.raceCenter.nextRaceAt
     && currentDate() < new Date(state.raceCenter.nextRaceAt)
     && !state.raceCenter.raceActive;
@@ -1264,6 +1293,7 @@ function renderRaceControls() {
     || openingDraftRequired
     || martyrVoteRequired
     || rookieDraftRequired
+    || darkSacrificeRequired
     || awaitingOpeningCeremony
     || awaitingScheduledRace;
   elements.raceButton.textContent = state.raceCenter.raceActive
@@ -1272,6 +1302,8 @@ function renderRaceControls() {
       ? "Opening draft required"
     : martyrVoteRequired
       ? "Initiation Martyr required"
+    : darkSacrificeRequired
+      ? "Dark Sacrifice required"
     : awaitingOpeningCeremony
       ? "Awaiting Initiation Martyring"
     : awaitingScheduledRace
@@ -1396,6 +1428,8 @@ function renderNewsTicker() {
   } else if (state.rookieDraft.status === "releases") {
     const awaiting = state.rookieDraft.teamsAwaitingRelease || [];
     text = `Roster releases required: ${awaiting.map((teamId) => teams.find((team) => team.id === teamId)?.short || teamId).join(", ")}.`;
+  } else if (state.raceCenter.raceScheduleComplete && state.darkSacrifice.status === "voting") {
+    text = "The Decelerator waits for an answer.";
   } else if (state.raceCenter.seasonComplete) {
     text = "Season complete. Champions crowned.";
   } else {
@@ -1576,6 +1610,7 @@ function applySeasonCeremonyPreview() {
 function showSeasonCeremony({ automatic = false } = {}) {
   const champions = state.raceCenter.champions;
   if (!champions || elements.seasonCeremonyDialog.open) return;
+  if (state.darkSacrifice.status === "resolved" && !darkSacrificeResultSeen()) return;
   if (automatic) {
     try {
       if (localStorage.getItem(seasonCeremonyStorageKey()) === "true") return;
@@ -1887,10 +1922,11 @@ function renderLeague() {
     const points = pointsByTeam.get(team.id) || 0;
     const titles = state.raceCenter.teamChampionshipWins?.[team.id] || 0;
     const pitCoachName = state.pitCoaches?.[team.id]?.coachName || "";
+    const stained = (state.raceCenter.stainOfSinTeamIds || state.stainOfSinTeamIds || []).includes(team.id);
     return `
       <article class="league-card" style="--team-color:${team.color}">
         <span class="code">${escapeHtml(team.short)}</span>
-        <h3>${escapeHtml(team.name)}</h3>
+        <h3>${escapeHtml(team.name)}${stained ? ` <span class="stain-of-sin">Stain of Sin</span>` : ""}</h3>
         ${pitCoachName ? `<p class="league-pit-coach"><span>Pit Coach</span><strong>${escapeHtml(pitCoachName)}</strong></p>` : ""}
         <div class="league-team-record">
           <span><strong>${points}</strong> Current points</span>
@@ -2391,6 +2427,23 @@ function needsPitCoachSelection() {
   return coach.required && !coach.complete;
 }
 
+function renderAdminHeader() {
+  if (elements.movesTeam) elements.movesTeam.textContent = managedTeamName();
+  if (!elements.movesPitCoachHeader) return;
+  const { options, selected } = pitCoachStateForManagedTeam();
+  if (!selected) {
+    elements.movesPitCoachHeader.hidden = true;
+    elements.movesPitCoachHeader.innerHTML = "";
+    return;
+  }
+  const specialty = options.find((option) => option.key === selected.specialtyKey);
+  elements.movesPitCoachHeader.hidden = false;
+  elements.movesPitCoachHeader.innerHTML = `
+    <div><span>Pit Coach and Specialty:</span> <strong>${escapeHtml(selected.coachName)}</strong></div>
+    <p>${escapeHtml(specialty?.description || "generic effect")}</p>
+  `;
+}
+
 function renderAdminRetention() {
   const { initiation, retention, selected, required, complete } = retentionStateForManagedTeam();
   if (!elements.draftRetentionFields) return;
@@ -2425,7 +2478,13 @@ function renderAdminRetention() {
 function renderPitCoachSelection() {
   const { options, selected, required } = pitCoachStateForManagedTeam();
   if (!elements.pitCoachFields) return;
-  elements.pitCoachFields.hidden = false;
+  elements.pitCoachFields.hidden = !required;
+  if (!required) {
+    elements.pitCoachSpecialty.value = "";
+    if (elements.pitCoachMessage) elements.pitCoachMessage.textContent = "";
+    updateDraftVoteAlertBadges();
+    return;
+  }
   const currentSpecialtyKey = selected?.specialtyKey || elements.pitCoachSpecialty.value || "";
   elements.pitCoachSpecialty.value = currentSpecialtyKey;
   const pickerDisabled = !required || Boolean(selected) || !options.length;
@@ -2450,27 +2509,8 @@ function renderPitCoachSelection() {
   }
   elements.savePitCoach.disabled = pickerDisabled || !elements.pitCoachSpecialty.value;
   elements.savePitCoach.textContent = selected ? "Update Pit Coach specialty" : "Save Pit Coach specialty";
-  elements.pitCoachCurrent.hidden = false;
-  if (selected) {
-    const specialty = options.find((option) => option.key === selected.specialtyKey);
-    elements.pitCoachCurrent.innerHTML = `
-      <span>Current</span>
-      <strong>${escapeHtml(selected.coachName)}</strong>
-      <small>${escapeHtml(specialty?.name || selected.specialtyKey)} / ${escapeHtml(specialty?.description || "generic effect")}</small>
-    `;
-  } else if (!required) {
-    elements.pitCoachCurrent.innerHTML = `
-      <span>Status</span>
-      <strong>Pit Coach selection is not open.</strong>
-      <small>This will become available after devman starts the next season.</small>
-    `;
-  } else {
-    elements.pitCoachCurrent.innerHTML = `
-      <span>Status</span>
-      <strong>No Pit Coach selected.</strong>
-      <small>Choose a specialty above to assign one for the upcoming season.</small>
-    `;
-  }
+  elements.pitCoachCurrent.hidden = true;
+  elements.pitCoachCurrent.innerHTML = "";
   if (elements.pitCoachMessage && !elements.pitCoachMessage.textContent) {
     elements.pitCoachMessage.textContent = required
       ? "The draft begins when every team saves retainers, saves a Pit Coach specialty, and votes."
@@ -2912,7 +2952,7 @@ function renderMoveSelectors() {
   const actingTeamId = managedTeamId();
   const actingTeam = teams.find((team) => team.id === actingTeamId);
 
-  elements.movesTeam.textContent = managedTeamLabel();
+  renderAdminHeader();
   const currentRookieSource = `rookie-${state.raceCenter?.season || 1}`;
   const releasableDrivers = actingTeam.drivers.filter((racer) => racer.source !== currentRookieSource);
   renderTradeBuilder();
@@ -3156,6 +3196,7 @@ async function loadLeagueState() {
   state.carNames = { ...defaultCarNamesByTeam, ...saved.carNames };
   state.cars = saved.cars || {};
   state.pitCoaches = saved.pitCoaches || {};
+  state.stainOfSinTeamIds = saved.stainOfSinTeamIds || [];
   applyTeamTheme();
 }
 
@@ -3179,6 +3220,12 @@ async function loadInitiationMartyr() {
   const response = await fetch("/api/initiation-martyr");
   if (!response.ok) throw new Error("Could not load the Initiation Martyr vote.");
   state.martyr = await response.json();
+}
+
+async function loadDarkSacrifice() {
+  const response = await fetch("/api/dark-sacrifice");
+  if (!response.ok) throw new Error("Could not load the Dark Sacrifice choice.");
+  state.darkSacrifice = await response.json();
 }
 
 function renderInitiationMartyrVote() {
@@ -3206,6 +3253,73 @@ function showInitiationMartyrResult(martyr) {
   const capitalizedPossessive = possessive[0].toUpperCase() + possessive.slice(1);
   elements.martyrResultMessage.textContent = `Huzzah! ${martyr.name} has been chosen as this season's Initiation Martyr! ${capitalizedPossessive} days are numbered...\n`;
   if (!elements.martyrResultDialog.open) elements.martyrResultDialog.showModal();
+}
+
+function darkSacrificeResultStorageKey(darkSacrifice = state.darkSacrifice) {
+  const sacrificeSignature = (darkSacrifice.sacrifices || [])
+    .map((sacrifice) => `${sacrifice.teamId}:${sacrifice.racerId}`)
+    .sort()
+    .join(",");
+  return `asscar60-season-${darkSacrifice.season || state.raceCenter.season}-dark-sacrifice-${darkSacrifice.resolvedAt || "resolved"}-${sacrificeSignature}-seen`;
+}
+
+function darkSacrificeResultSeen() {
+  if (state.darkSacrifice.status !== "resolved") return true;
+  try {
+    return localStorage.getItem(darkSacrificeResultStorageKey()) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function renderDarkSacrificeChoice() {
+  if (!elements.darkSacrificeDialog) return;
+  const darkSacrifice = state.darkSacrifice;
+  if (darkSacrifice.status !== "voting" || darkSacrifice.selected) {
+    if (elements.darkSacrificeDialog.open) elements.darkSacrificeDialog.close();
+    return;
+  }
+  const chosenTeamIds = new Set((darkSacrifice.choices || []).map((choice) => choice.team_id));
+  const canChoose = Boolean(managedTeamId()) && !chosenTeamIds.has(managedTeamId());
+  elements.darkSacrificeCandidate.innerHTML = [
+    `<option value="">No one!</option>`,
+    ...(darkSacrifice.candidates || []).map((racer) => (
+      `<option value="${racer.id}">${escapeHtml(racer.name)} (${escapeHtml(racer.pronouns)})</option>`
+    )),
+  ].join("");
+  elements.darkSacrificeProgress.innerHTML = teams.map((team) => (
+    `<span class="${chosenTeamIds.has(team.id) ? "voted" : ""}">${escapeHtml(team.short)} ${chosenTeamIds.has(team.id) ? "chosen" : "awaiting"}</span>`
+  )).join("");
+  elements.darkSacrificeMessage.textContent = `${darkSacrifice.choiceCount || 0} of ${darkSacrifice.requiredChoices || teams.length} teams have answered.`;
+  elements.submitDarkSacrifice.disabled = !canChoose;
+  if (canChoose && !elements.darkSacrificeDialog.open) elements.darkSacrificeDialog.showModal();
+}
+
+function showDarkSacrificeResult({ automatic = false } = {}) {
+  if (!elements.darkSacrificeResultDialog) return false;
+  if (state.darkSacrifice.status !== "resolved" || elements.darkSacrificeResultDialog.open) return false;
+  if (automatic && darkSacrificeResultSeen()) return false;
+  const sacrifices = state.darkSacrifice.sacrifices || [];
+  if (sacrifices.length) {
+    elements.darkSacrificeResultMessage.innerHTML = sacrifices.map((sacrifice) => {
+      const team = teams.find((item) => item.id === sacrifice.teamId);
+      return `${escapeHtml(sacrifice.racerName)} - ${escapeHtml(team?.short || sacrifice.teamId)}`;
+    }).join("<br>");
+  } else {
+    elements.darkSacrificeResultMessage.textContent = "None succumbed to the drone of the Decelerator is season.";
+  }
+  elements.darkSacrificeResultDialog.showModal();
+  return true;
+}
+
+function closeDarkSacrificeResult() {
+  try {
+    localStorage.setItem(darkSacrificeResultStorageKey(), "true");
+  } catch {
+    // The result can still be dismissed when browser storage is unavailable.
+  }
+  elements.darkSacrificeResultDialog.close();
+  showSeasonCeremony({ automatic: true });
 }
 
 async function loadTransactions() {
@@ -4162,6 +4276,50 @@ elements.closeMartyrResult.addEventListener("click", () => {
   elements.martyrResultDialog.close();
 });
 
+elements.submitDarkSacrifice.addEventListener("click", async () => {
+  elements.submitDarkSacrifice.disabled = true;
+  elements.darkSacrificeMessage.textContent = "The Decelerator is listening...";
+  try {
+    const response = await fetch("/api/dark-sacrifice/choices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        racerId: elements.darkSacrificeCandidate.value || null,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not record the Dark Sacrifice.");
+    state.darkSacrifice = result;
+    if (result.status === "resolved") {
+      elements.darkSacrificeDialog.close();
+      await Promise.all([
+        loadLeagueState(),
+        loadRaceCenter(),
+        loadRacerDirectory(),
+        loadInMemoriam(),
+      ]);
+      renderTeamProfile();
+      renderLeague();
+      renderRacerDirectories();
+      renderInMemoriam();
+      renderRaceArchive();
+      renderRaceControls();
+      showDarkSacrificeResult({ automatic: false });
+    } else {
+      renderDarkSacrificeChoice();
+    }
+  } catch (error) {
+    elements.darkSacrificeMessage.textContent = error.message;
+    elements.submitDarkSacrifice.disabled = false;
+  }
+});
+
+elements.darkSacrificeDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+});
+
+elements.closeDarkSacrificeResult.addEventListener("click", closeDarkSacrificeResult);
+
 elements.signedRacerSort.addEventListener("change", renderRacerDirectories);
 elements.freeAgentRacerSort.addEventListener("change", renderRacerDirectories);
 
@@ -4571,6 +4729,7 @@ async function initialize() {
       loadDraft(),
       loadRookieDraft(),
       loadInitiationMartyr(),
+      loadDarkSacrifice(),
       loadTransactions(),
       loadDevelopment(),
       loadRaceCenter(),
@@ -4602,6 +4761,7 @@ async function initialize() {
     activateSection(state.activeSection, state.activeViewBySection[state.activeSection]);
     renderRaceControls();
     renderInitiationMartyrVote();
+    renderDarkSacrificeChoice();
     if (state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
       const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
       const activeRace = await response.json();
@@ -4617,6 +4777,7 @@ async function initialize() {
     } else {
       await renderIdleRaceFeed();
     }
+    showDarkSacrificeResult({ automatic: !isSeasonCeremonyPreview() });
     showSeasonCeremony({ automatic: !isSeasonCeremonyPreview() });
     if (navigationMode === "rules") showRulesPage();
     if (navigationMode === "media") await showMediaPage();
@@ -4625,9 +4786,15 @@ async function initialize() {
 
 async function syncRaceCenter() {
   const ceremonyWasAvailable = Boolean(state.raceCenter.seasonComplete && state.raceCenter.champions);
+  const darkSacrificeWasVoting = state.darkSacrifice.status === "voting";
+  const darkSacrificeWasResolved = state.darkSacrifice.status === "resolved";
   const priorRelayLockReason = relayPlanRaceLockReason();
-  await loadRaceCenter();
+  await Promise.all([loadRaceCenter(), loadDarkSacrifice()]);
   const nextRelayLockReason = relayPlanRaceLockReason();
+  const darkSacrificeNewlyResolved = !darkSacrificeWasResolved
+    && state.darkSacrifice.status === "resolved";
+  const darkSacrificeNewlyAvailable = !darkSacrificeWasVoting
+    && state.darkSacrifice.status === "voting";
   const ceremonyIsNewlyAvailable = !ceremonyWasAvailable
     && state.raceCenter.seasonComplete
     && state.raceCenter.champions;
@@ -4645,7 +4812,7 @@ async function syncRaceCenter() {
       renderLineupEditor();
     }
   } else if (!state.running) {
-    if (ceremonyIsNewlyAvailable) {
+    if (darkSacrificeNewlyAvailable || darkSacrificeNewlyResolved || ceremonyIsNewlyAvailable) {
       await Promise.all([loadLeagueState(), loadRacerDirectory(), loadInMemoriam()]);
       renderTeamProfile();
       renderLeague();
@@ -4653,9 +4820,11 @@ async function syncRaceCenter() {
       renderInMemoriam();
       renderRaceArchive();
     }
+    renderDarkSacrificeChoice();
     renderRaceControls();
     if (priorRelayLockReason !== nextRelayLockReason) renderLineupEditor();
     await renderIdleRaceFeed();
+    if (darkSacrificeNewlyResolved) showDarkSacrificeResult({ automatic: true });
     if (state.raceCenter.seasonComplete && state.raceCenter.champions) {
       showSeasonCeremony({ automatic: true });
     }
