@@ -5645,9 +5645,9 @@ export function createLeagueStore(path = ":memory:") {
       .filter((sacrifice) => {
         const teamDrivers = mvds.filter((standing) => standing.teamId === sacrifice.team_id);
         if (!teamDrivers.length) return false;
-        const bestPoints = Math.max(...teamDrivers.map((standing) => standing.points));
+        const bestPoints = Math.max(...teamDrivers.map((standing) => standing.pointUnits));
         return teamDrivers.some((standing) => (
-          standing.racerId === sacrifice.racer_id && standing.points === bestPoints
+          standing.racerId === sacrifice.racer_id && standing.pointUnits === bestPoints
         ));
       })
       .map((sacrifice) => sacrifice.team_id);
