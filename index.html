@@ -73,6 +73,7 @@
         <div id="app-menu" class="app-menu" hidden>
           <button id="open-rules" type="button">Rules</button>
           <button id="open-media" type="button">Media</button>
+          <button id="open-memoriam" type="button">In Memoriam</button>
           <a id="open-wiki" href="https://thebrosmos.fandom.com/wiki/Category:Formula_D" target="_blank" rel="noopener noreferrer">Wiki</a>
           <button id="menu-logout" type="button">Logout</button>
         </div>
@@ -198,6 +199,15 @@
           <button id="add-media-entry" type="button" class="primary-button media-add-button"><span aria-hidden="true">+</span> Add Entry</button>
         </div>
         <div id="media-list" class="media-list"></div>
+      </section>
+    </section>
+
+    <section id="memoriam-view" class="rules-page memoriam-page" hidden>
+      <section class="panel rules-panel memoriam-panel">
+        <div class="section-heading">
+          <div><span class="eyebrow">Gone from the grid</span><h2>In Memoriam</h2></div>
+        </div>
+        <div id="memoriam-list" class="memoriam-list"></div>
       </section>
     </section>
 
@@ -380,11 +390,11 @@
       <div id="free-agent-racers" class="racer-directory"></div>
     </section>
 
-    <section id="memoriam-view" class="view" data-section-view="league">
+    <section id="events-view" class="view" data-section-view="league">
       <div class="section-heading league-heading">
-        <div><span class="eyebrow">Gone from the grid</span><h2>In Memoriam</h2></div>
+        <div><span class="eyebrow">Season record</span><h2>Events</h2></div>
       </div>
-      <div id="memoriam-list" class="memoriam-list"></div>
+      <div id="season-events-list" class="season-events-list"></div>
     </section>
 
     <section id="standings-view" class="view" data-section-view="league">

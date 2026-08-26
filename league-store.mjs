@@ -3846,6 +3846,13 @@ export function createLeagueStore(path = ":memory:") {
       .sort((a, b) => String(b.diedAt).localeCompare(String(a.diedAt)));
   }
 
+  function getSeasonEvents(season = getActiveSeason()) {
+    return {
+      season,
+      events: [],
+    };
+  }
+
   function voteForInitiationMartyr(teamId, racerId, season = 1) {
     if (!teams.some((team) => team.id === teamId)) throw new Error("Unknown team.");
     const martyrState = getInitiationMartyr(season);
@@ -6540,6 +6547,7 @@ export function createLeagueStore(path = ":memory:") {
     getRace,
     getRaceCenter,
     getSeasonHistory,
+    getSeasonEvents,
     getRacerDirectory,
     finishRace,
     finishActiveRaceNow,

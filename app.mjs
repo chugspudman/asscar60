@@ -33,7 +33,7 @@ const SECTION_TABS = {
     { view: "league", label: "Teams" },
     { view: "signed", label: "Signed Racers" },
     { view: "free-agents", label: "Free Agents" },
-    { view: "memoriam", label: "In Memoriam" },
+    { view: "events", label: "Events" },
   ],
 };
 const COURSE_CODES = {
@@ -131,6 +131,7 @@ const state = {
   },
   pitCoaches: {},
   inMemoriam: [],
+  seasonEvents: [],
   development: {
     week: 1,
     options: [],
@@ -299,6 +300,7 @@ const elements = {
   signedRacers: document.querySelector("#signed-racers"),
   freeAgentRacers: document.querySelector("#free-agent-racers"),
   memoriamList: document.querySelector("#memoriam-list"),
+  seasonEventsList: document.querySelector("#season-events-list"),
   signedRacerSort: document.querySelector("#signed-racer-sort"),
   freeAgentRacerSort: document.querySelector("#free-agent-racer-sort"),
   brandTeam: document.querySelector("#brand-team"),
@@ -337,11 +339,13 @@ const elements = {
   appMenu: document.querySelector("#app-menu"),
   openRules: document.querySelector("#open-rules"),
   openMedia: document.querySelector("#open-media"),
+  openMemoriam: document.querySelector("#open-memoriam"),
   openWiki: document.querySelector("#open-wiki"),
   menuLogout: document.querySelector("#menu-logout"),
   rulesPage: document.querySelector("#rules-view"),
   closeRules: document.querySelector("#close-rules"),
   mediaPage: document.querySelector("#media-view"),
+  memoriamPage: document.querySelector("#memoriam-view"),
   mediaList: document.querySelector("#media-list"),
   addMediaEntry: document.querySelector("#add-media-entry"),
   mediaDialog: document.querySelector("#media-dialog"),
@@ -451,7 +455,7 @@ function restoreNavigationState() {
       tabsForSection(key).some((tab) => tab.view === view)
     ))),
   };
-  return ["rules", "media"].includes(saved.mode) ? saved.mode : "section";
+  return ["rules", "media", "memoriam"].includes(saved.mode) ? saved.mode : "section";
 }
 
 function managedTeamLabel() {
@@ -2224,6 +2228,7 @@ function renderRacerDirectories() {
 }
 
 function renderInMemoriam() {
+  if (!elements.memoriamList) return;
   elements.memoriamList.innerHTML = state.inMemoriam.length
     ? state.inMemoriam.map((entry) => `
       <article class="memoriam-row">
@@ -2235,6 +2240,21 @@ function renderInMemoriam() {
       </article>
     `).join("")
     : `<p class="muted">No ASSCAR60 deaths have been recorded.</p>`;
+}
+
+function renderSeasonEvents() {
+  if (!elements.seasonEventsList) return;
+  elements.seasonEventsList.innerHTML = state.seasonEvents.length
+    ? state.seasonEvents.map((event) => `
+      <article class="season-event-row">
+        <div class="season-event-heading">
+          <strong>${escapeHtml(event.title || "Season Event")}</strong>
+          <small>${escapeHtml(formatMediaDate(event.createdAt || event.date))}</small>
+        </div>
+        <p>${escapeHtml(event.summary || event.text || "")}</p>
+      </article>
+    `).join("")
+    : `<p class="muted">No Season Events have been recorded for this season yet.</p>`;
 }
 
 function formatMediaDate(value) {
@@ -3583,6 +3603,13 @@ async function loadInMemoriam() {
   state.inMemoriam = await response.json();
 }
 
+async function loadSeasonEvents() {
+  const response = await fetch("/api/season-events");
+  if (!response.ok) throw new Error("Could not load Season Events.");
+  const result = await response.json();
+  state.seasonEvents = result.events || [];
+}
+
 async function loadMediaEntries() {
   const previousUnread = new Set(state.unreadMediaEntryIds || []);
   const response = await fetch("/api/media");
@@ -3690,6 +3717,7 @@ function activateSection(sectionName, requestedView = null) {
   if (!tabs.length) return;
   if (elements.rulesPage) elements.rulesPage.hidden = true;
   if (elements.mediaPage) elements.mediaPage.hidden = true;
+  if (elements.memoriamPage) elements.memoriamPage.hidden = true;
   const viewName = tabs.some((tab) => tab.view === requestedView)
     ? requestedView
     : tabs.some((tab) => tab.view === state.activeViewBySection[sectionName])
@@ -3723,6 +3751,11 @@ function activateSection(sectionName, requestedView = null) {
   if (sectionName === "office" && viewName === "moves") {
     markPendingTradeOffersSeen();
   }
+  if (sectionName === "league" && viewName === "events") {
+    void loadSeasonEvents()
+      .then(renderSeasonEvents)
+      .catch(() => {});
+  }
   writeNavigationState("section");
   renderNewsTicker();
   updateTradeAlertBadges();
@@ -3752,6 +3785,7 @@ function showRulesPage() {
   writeNavigationState("rules");
   elements.rulesPage.hidden = false;
   if (elements.mediaPage) elements.mediaPage.hidden = true;
+  if (elements.memoriamPage) elements.memoriamPage.hidden = true;
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
   elements.subnav.innerHTML = "";
@@ -3766,6 +3800,7 @@ async function showMediaPage() {
   state.mediaMenuNoticed = true;
   updateMediaAlertBadges();
   if (elements.rulesPage) elements.rulesPage.hidden = true;
+  if (elements.memoriamPage) elements.memoriamPage.hidden = true;
   elements.mediaPage.hidden = false;
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
@@ -3778,6 +3813,26 @@ async function showMediaPage() {
     // Keep the existing list visible if a refresh fails.
   }
   renderMediaPage();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function showMemoriamPage() {
+  closeAppMenu();
+  writeNavigationState("memoriam");
+  if (elements.rulesPage) elements.rulesPage.hidden = true;
+  if (elements.mediaPage) elements.mediaPage.hidden = true;
+  elements.memoriamPage.hidden = false;
+  document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
+  document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
+  elements.subnav.innerHTML = "";
+  elements.raceStatusBanner.hidden = true;
+  renderNewsTicker();
+  try {
+    await loadInMemoriam();
+  } catch {
+    // Keep the existing list visible if a refresh fails.
+  }
+  renderInMemoriam();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -4808,6 +4863,7 @@ async function initialize() {
       loadRaceCenter(),
       loadRacerDirectory(),
       loadInMemoriam(),
+      loadSeasonEvents(),
       loadMediaEntries(),
     ]);
   } catch (error) {
@@ -4829,6 +4885,7 @@ async function initialize() {
     renderCourses();
     renderRacerDirectories();
     renderInMemoriam();
+    renderSeasonEvents();
     renderMediaPage();
     const navigationMode = restoreNavigationState();
     activateSection(state.activeSection, state.activeViewBySection[state.activeSection]);
@@ -4854,6 +4911,7 @@ async function initialize() {
     showSeasonCeremony({ automatic: !isSeasonCeremonyPreview() });
     if (navigationMode === "rules") showRulesPage();
     if (navigationMode === "media") await showMediaPage();
+    if (navigationMode === "memoriam") await showMemoriamPage();
   }
 }
 
@@ -5115,6 +5173,7 @@ elements.appMenuButton.addEventListener("click", (event) => {
 });
 elements.openRules.addEventListener("click", showRulesPage);
 elements.openMedia.addEventListener("click", showMediaPage);
+elements.openMemoriam.addEventListener("click", showMemoriamPage);
 elements.openWiki.addEventListener("click", () => {
   closeAppMenu();
 });
