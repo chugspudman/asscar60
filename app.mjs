@@ -2283,6 +2283,7 @@ function showSeasonEventsPopup() {
     </article>
   `).join("");
   elements.seasonEventsDialog.showModal();
+  void markSeasonEventsPopupSeen();
   return true;
 }
 
@@ -5245,9 +5246,8 @@ elements.closeRules.addEventListener("click", returnToLeagueView);
 elements.addMediaEntry.addEventListener("click", () => openMediaDialog());
 elements.cancelMediaEntry.addEventListener("click", () => elements.mediaDialog.close());
 elements.mediaForm.addEventListener("submit", saveMediaEntry);
-elements.closeSeasonEvents.addEventListener("click", async () => {
+elements.closeSeasonEvents.addEventListener("click", () => {
   elements.seasonEventsDialog.close();
-  await markSeasonEventsPopupSeen();
 });
 elements.mediaList.addEventListener("click", async (event) => {
   const editButton = event.target.closest("[data-media-edit]");
