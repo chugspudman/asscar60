@@ -526,6 +526,7 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .racer-identity { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px; }
 .racer-identity strong { display: block; font-size: 24px; line-height: 1.1; letter-spacing: -.035em; }
 .racer-identity > span { color: var(--muted); font: 500 9px "DM Mono", monospace; text-transform: uppercase; white-space: nowrap; }
+.racer-status-tag { color: var(--accent); font: inherit; letter-spacing: .04em; }
 .roster-grid .driver-card .racer-identity { min-height: 36px; margin-bottom: 8px; }
 .driver-card p { color: var(--muted); font-size: 11px; margin: 4px 0 12px; min-height: 32px; }
 .ratings { display: grid; grid-template-columns: repeat(7, minmax(38px, 1fr)); gap: 5px; }
@@ -1059,6 +1060,31 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .memoriam-row strong { font-size: 20px; letter-spacing: -.035em; }
 .memoriam-driver small { display: block; margin-top: 4px; color: var(--muted); font: 700 10px "DM Mono", monospace; text-transform: uppercase; }
 .memoriam-row span { color: var(--muted); font: 700 11px "DM Mono", monospace; text-transform: uppercase; }
+.season-events-list { display: grid; gap: 10px; max-width: 960px; }
+.season-event-row {
+  display: grid; gap: 10px;
+  padding: 16px; border: 1px solid var(--line); background: var(--panel);
+}
+.season-event-heading { display: flex; justify-content: space-between; gap: 14px; align-items: baseline; }
+.season-event-heading strong { font-size: 20px; letter-spacing: -.035em; }
+.season-event-heading small { color: var(--muted); font: 700 10px "DM Mono", monospace; text-transform: uppercase; white-space: nowrap; }
+.season-event-row p { margin: 0; color: var(--muted); line-height: 1.5; }
+.season-events-dialog { width: min(720px, calc(100% - 28px)); }
+.season-events-card { max-height: min(760px, calc(100vh - 32px)); overflow: hidden; display: flex; flex-direction: column; }
+.season-events-popup-list { display: grid; gap: 12px; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+.season-event-popup-row {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .035);
+  padding: 14px;
+}
+.season-event-popup-row small {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font: 700 10px "DM Mono", monospace;
+  text-transform: uppercase;
+}
+.season-event-popup-row p { margin: 0; color: var(--text); line-height: 1.55; overflow-wrap: anywhere; }
 
 footer { border-top: 1px solid var(--line); margin-top: 30px; padding: 20px clamp(20px,4vw,64px); display: flex; justify-content: space-between; color: var(--muted); font: 500 10px "DM Mono", monospace; }
 
@@ -1121,6 +1147,7 @@ footer { border-top: 1px solid var(--line); margin-top: 30px; padding: 20px clam
   .course-features { grid-template-columns: 1fr; }
   .racer-expanded { grid-template-columns: 1fr; }
   .memoriam-row { grid-template-columns: 1fr; }
+  .season-event-heading { display: grid; gap: 4px; }
   .career-grid { grid-template-columns: repeat(2, 1fr); }
   .draft-status { grid-template-columns: 1fr 1fr; }
   .moves-toolbar { grid-template-columns: 1fr; }

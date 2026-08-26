@@ -132,6 +132,7 @@ const state = {
   pitCoaches: {},
   inMemoriam: [],
   seasonEvents: [],
+  unreadSeasonEventIds: [],
   development: {
     week: 1,
     options: [],
@@ -301,6 +302,9 @@ const elements = {
   freeAgentRacers: document.querySelector("#free-agent-racers"),
   memoriamList: document.querySelector("#memoriam-list"),
   seasonEventsList: document.querySelector("#season-events-list"),
+  seasonEventsDialog: document.querySelector("#season-events-dialog"),
+  seasonEventsPopupList: document.querySelector("#season-events-popup-list"),
+  closeSeasonEvents: document.querySelector("#close-season-events"),
   signedRacerSort: document.querySelector("#signed-racer-sort"),
   freeAgentRacerSort: document.querySelector("#free-agent-racer-sort"),
   brandTeam: document.querySelector("#brand-team"),
@@ -849,6 +853,7 @@ function qualifierIncidentMarkup(entry) {
   const parts = [];
   if (entry.qualifierMishaps) parts.push(`${entry.qualifierMishaps} mishap${entry.qualifierMishaps === 1 ? "" : "s"}`);
   if (entry.qualifierSpins) parts.push(`${entry.qualifierSpins} spin${entry.qualifierSpins === 1 ? "" : "s"}`);
+  if (entry.qualifierYips) parts.push("yips");
   return parts.length
     ? ` <small class="qualifier-incident-note">(${escapeHtml(parts.join(", "))})</small>`
     : "";
@@ -1671,6 +1676,7 @@ function closeSeasonCeremony() {
     // Closing the ceremony must not depend on browser storage.
   }
   elements.seasonCeremonyDialog.close();
+  showSeasonEventsPopup();
 }
 
 function courseFeatureMarkup(label, segments) {
@@ -1751,7 +1757,7 @@ function racerIdentityMarkup(racer) {
   return `
     <div class="racer-identity">
       <strong>${escapeHtml(racer.name)}</strong>
-      <span>${escapeHtml(racer.pronouns)}</span>
+      <span>${escapeHtml(racer.pronouns)}${racer.robotoid ? ` <b class="racer-status-tag">Robotoid</b>` : ""}</span>
     </div>`;
 }
 
@@ -2249,12 +2255,56 @@ function renderSeasonEvents() {
       <article class="season-event-row">
         <div class="season-event-heading">
           <strong>${escapeHtml(event.title || "Season Event")}</strong>
-          <small>${escapeHtml(formatMediaDate(event.createdAt || event.date))}</small>
+          <small>${escapeHtml(formatMediaDate(event.occurredAt || event.createdAt || event.date))}</small>
         </div>
         <p>${escapeHtml(event.summary || event.text || "")}</p>
       </article>
     `).join("")
     : `<p class="muted">No Season Events have been recorded for this season yet.</p>`;
+}
+
+function blockingDialogOpen() {
+  return [...document.querySelectorAll("dialog")].some((dialog) => (
+    dialog.open && dialog !== elements.seasonEventsDialog
+  ));
+}
+
+function showSeasonEventsPopup() {
+  if (!elements.seasonEventsDialog || !elements.seasonEventsPopupList) return false;
+  if (!state.unreadSeasonEventIds.length || blockingDialogOpen()) return false;
+  const unread = state.seasonEvents
+    .filter((event) => state.unreadSeasonEventIds.includes(event.id))
+    .sort((a, b) => new Date(a.occurredAt || a.createdAt || 0) - new Date(b.occurredAt || b.createdAt || 0));
+  if (!unread.length) return false;
+  elements.seasonEventsPopupList.innerHTML = unread.map((event) => `
+    <article class="season-event-popup-row">
+      <small>${escapeHtml(formatMediaDate(event.occurredAt || event.createdAt || event.date))}</small>
+      <p>${escapeHtml(event.summary || event.text || "")}</p>
+    </article>
+  `).join("");
+  elements.seasonEventsDialog.showModal();
+  return true;
+}
+
+async function markSeasonEventsPopupSeen() {
+  if (!state.unreadSeasonEventIds.length) return;
+  const eventIds = [...state.unreadSeasonEventIds];
+  state.unreadSeasonEventIds = [];
+  try {
+    const response = await fetch("/api/season-events/seen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventIds }),
+    });
+    if (response.ok) {
+      const result = await response.json();
+      state.seasonEvents = result.events || state.seasonEvents;
+      state.unreadSeasonEventIds = result.unreadEventIds || [];
+      renderSeasonEvents();
+    }
+  } catch {
+    // Seeing a popup is a client comfort feature; keep the app usable if this fails.
+  }
 }
 
 function formatMediaDate(value) {
@@ -3396,11 +3446,13 @@ async function closeDarkSacrificeResult() {
       loadLeagueState(),
       loadRacerDirectory(),
       loadInMemoriam(),
+      loadSeasonEvents(),
     ]);
     renderTeamProfile();
     renderLeague();
     renderRacerDirectories();
     renderInMemoriam();
+    renderSeasonEvents();
     renderRaceArchive();
     renderRaceControls();
     renderNewsTicker();
@@ -3413,6 +3465,7 @@ async function closeDarkSacrificeResult() {
     // The ceremony can still open when browser storage is unavailable.
   }
   showSeasonCeremony({ automatic: false });
+  showSeasonEventsPopup();
 }
 
 async function loadTransactions() {
@@ -3608,6 +3661,7 @@ async function loadSeasonEvents() {
   if (!response.ok) throw new Error("Could not load Season Events.");
   const result = await response.json();
   state.seasonEvents = result.events || [];
+  state.unreadSeasonEventIds = result.unreadEventIds || [];
 }
 
 async function loadMediaEntries() {
@@ -4909,6 +4963,7 @@ async function initialize() {
     }
     showDarkSacrificeResult({ automatic: !isSeasonCeremonyPreview() });
     showSeasonCeremony({ automatic: !isSeasonCeremonyPreview() });
+    showSeasonEventsPopup();
     if (navigationMode === "rules") showRulesPage();
     if (navigationMode === "media") await showMediaPage();
     if (navigationMode === "memoriam") await showMemoriamPage();
@@ -4944,12 +4999,16 @@ async function syncRaceCenter() {
     }
   } else if (!state.running) {
     if (darkSacrificeNewlyAvailable || darkSacrificeNewlyResolved || ceremonyIsNewlyAvailable) {
-      await Promise.all([loadLeagueState(), loadRacerDirectory(), loadInMemoriam()]);
+      await Promise.all([loadLeagueState(), loadRacerDirectory(), loadInMemoriam(), loadSeasonEvents()]);
       renderTeamProfile();
       renderLeague();
       renderRacerDirectories();
       renderInMemoriam();
+      renderSeasonEvents();
       renderRaceArchive();
+    } else {
+      await loadSeasonEvents().catch(() => {});
+      renderSeasonEvents();
     }
     renderDarkSacrificeChoice();
     renderRaceControls();
@@ -4959,6 +5018,7 @@ async function syncRaceCenter() {
     if (state.raceCenter.seasonComplete && state.raceCenter.champions) {
       showSeasonCeremony({ automatic: true });
     }
+    showSeasonEventsPopup();
   }
 }
 
@@ -5185,6 +5245,10 @@ elements.closeRules.addEventListener("click", returnToLeagueView);
 elements.addMediaEntry.addEventListener("click", () => openMediaDialog());
 elements.cancelMediaEntry.addEventListener("click", () => elements.mediaDialog.close());
 elements.mediaForm.addEventListener("submit", saveMediaEntry);
+elements.closeSeasonEvents.addEventListener("click", async () => {
+  elements.seasonEventsDialog.close();
+  await markSeasonEventsPopupSeen();
+});
 elements.mediaList.addEventListener("click", async (event) => {
   const editButton = event.target.closest("[data-media-edit]");
   if (editButton) {

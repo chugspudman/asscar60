@@ -324,6 +324,18 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && requestedPath === "/api/season-events") {
+      sendJson(response, 200, store.getSeasonEvents(store.getActiveSeason(), currentSession(request) || {}));
+      return;
+    }
+
+    if (request.method === "POST" && requestedPath === "/api/season-events/seen") {
+      const manager = requireLoggedIn(request);
+      const body = await readJson(request);
+      sendJson(response, 200, store.markSeasonEventsSeen(manager.username, body.eventIds || []));
+      return;
+    }
+
     if (request.method === "GET" && requestedPath === "/api/media") {
       const manager = requireLoggedIn(request);
       sendJson(response, 200, store.getMediaEntries(manager.username));

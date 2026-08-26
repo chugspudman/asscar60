@@ -917,6 +917,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
   const course = courseByName(options.courseName);
   const condition = options.condition || conditionForRoll(course, random());
   const pitCoachesByTeam = options.pitCoachesByTeam || {};
+  const preRaceSpeedMadnessRacerIds = new Set(options.preRaceSpeedMadnessRacerIds || []);
   const segmentCount = course.segments.length;
   const totalSegments = TOTAL_LAPS * segmentCount;
   const racers = entries.map((entry) => ({
@@ -1042,6 +1043,25 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     message: "The grid becomes a mess as drivers jockey for position!",
   }];
 
+  for (const entry of racers) {
+    for (const driver of entry.uniqueDrivers) {
+      if (!preRaceSpeedMadnessRacerIds.has(driver.id)) continue;
+      entry.speedMadnessDrivers.add(driver.id);
+      applySpeedMadness(entry, driver);
+      events.push({
+        time: 0.05,
+        type: "strange",
+        entryId: entry.id,
+        ...positionMeta(entry.position),
+        message: `${driver.name} succumbs to the Speed Madness foretold in practice! (Control, Overtaking, and Stamina maxed this stint)`,
+        category: "event",
+        tone: "bad",
+        racerId: driver.id,
+        speedMadnessRecoveryRacerId: driver.id,
+      });
+    }
+  }
+
   let time = 0;
   while (racers.some((entry) => entry.status === "running") && time < 7200) {
     const nextTime = time + 1;
@@ -1070,6 +1090,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
           category: "event",
           tone: "bad",
           racerId: driver.id,
+          speedMadnessRecoveryRacerId: driver.id,
         });
       }
     }
@@ -1269,6 +1290,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
         } else if (effect.special === "mark") {
           applySpeedMadness(entry, driver);
           message.markGranted = true;
+          message.speedMadnessRecoveryRacerId = driver.id;
         } else if (effect.special === "dnf") {
           entry.status = "dnf";
           entry.dnfTime = eventTime;

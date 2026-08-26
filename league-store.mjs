@@ -1197,8 +1197,11 @@ function qualifierLapResult(entry, driver, course, condition, random) {
 }
 
 function applyQualifierGrid(entries, standings, courseName, condition = "Sunny", seed = "qualifier") {
+  const options = typeof seed === "object" && seed !== null ? seed : {};
+  const qualifierSeed = typeof seed === "object" && seed !== null ? options.seed || "qualifier" : seed;
+  const yipsRacerIds = new Set(options.yipsRacerIds || []);
   const course = COURSES.find((item) => item.name === courseName) || COURSES[0];
-  const random = seededRandom(hashText(`${seed}:${courseName}:${condition}:qualifier`));
+  const random = seededRandom(hashText(`${qualifierSeed}:${courseName}:${condition}:qualifier`));
   const standingOrder = standings.length
     ? standings.map((standing) => standing.teamId)
     : teams.map((team) => team.id);
@@ -1218,6 +1221,8 @@ function applyQualifierGrid(entries, standings, courseName, condition = "Sunny",
       random,
     ));
     const lapTimes = lapResults.map((result) => result.totalTime);
+    const yipsDriver = drivers.find((driver) => yipsRacerIds.has(driver.id));
+    const yipsPenalty = yipsDriver ? 10000 : 0;
     return {
       entryId: entry.id,
       carName: entry.carName,
@@ -1229,8 +1234,12 @@ function applyQualifierGrid(entries, standings, courseName, condition = "Sunny",
       incidents: lapResults.flatMap((result, lapIndex) => result.incidents.map((incident) => ({
         ...incident,
         lap: lapIndex + 1,
-      }))),
-      totalTime: lapTimes.reduce((total, lapTime) => total + lapTime, 0),
+      }))).concat(yipsDriver ? [{
+        type: "yips",
+        driver: yipsDriver.name,
+        penalty: yipsPenalty,
+      }] : []),
+      totalTime: lapTimes.reduce((total, lapTime) => total + lapTime, 0) + yipsPenalty,
     };
   }).sort((a, b) => a.totalTime - b.totalTime || a.qualificationOrder - b.qualificationOrder);
   const resultByEntry = new Map(results.map((result, index) => [result.entryId, {
@@ -1492,6 +1501,49 @@ export function createLeagueStore(path = ":memory:") {
       coach_name TEXT NOT NULL,
       selected_at TEXT NOT NULL,
       PRIMARY KEY (season, team_id)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS season_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season INTEGER NOT NULL,
+      event_key TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('flavor', 'mechanical')),
+      unique_key TEXT,
+      text TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}'
+    ) STRICT;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS season_events_unique_key
+    ON season_events(season, unique_key)
+    WHERE unique_key IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS season_event_rolls (
+      season INTEGER NOT NULL,
+      date_key TEXT NOT NULL,
+      rolled_at TEXT NOT NULL,
+      event_id INTEGER REFERENCES season_events(id) ON DELETE SET NULL,
+      PRIMARY KEY (season, date_key)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS season_event_reads (
+      username TEXT NOT NULL,
+      event_id INTEGER NOT NULL REFERENCES season_events(id) ON DELETE CASCADE,
+      seen_at TEXT NOT NULL,
+      PRIMARY KEY (username, event_id)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS season_event_effects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER REFERENCES season_events(id) ON DELETE CASCADE,
+      season INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      team_id TEXT,
+      racer_id TEXT REFERENCES racers(id),
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      remaining_races INTEGER,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL
     ) STRICT;
 
     CREATE TABLE IF NOT EXISTS media_entries (
@@ -1945,6 +1997,10 @@ export function createLeagueStore(path = ":memory:") {
   if (!racerColumns.some((column) => column.name === "speed_mark")) {
     database.exec("ALTER TABLE racers ADD COLUMN speed_mark INTEGER NOT NULL DEFAULT 0");
   }
+  racerColumns = database.prepare("PRAGMA table_info(racers)").all();
+  if (!racerColumns.some((column) => column.name === "robotoid")) {
+    database.exec("ALTER TABLE racers ADD COLUMN robotoid INTEGER NOT NULL DEFAULT 0");
+  }
   database.exec(`
     UPDATE races SET course_name = CASE course_name
       WHEN 'The Glass Orchard' THEN 'Race City'
@@ -1991,7 +2047,7 @@ export function createLeagueStore(path = ":memory:") {
     UPDATE racers
     SET name = ?, pace = ?, control = ?, overtaking = ?, stamina = ?,
         technical = ?, weird = ?, speed_mark = 0, potential = ?,
-        note = ?, pronouns = ?, team_id = ?, source = ?
+        note = ?, pronouns = ?, robotoid = 0, team_id = ?, source = ?
     WHERE id = ? AND team_id IS NULL
   `);
 
@@ -2135,7 +2191,7 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const readRoster = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns, source
+           weird, speed_mark, potential, note, pronouns, robotoid, source
     FROM racers
     WHERE team_id = ?
     ORDER BY rowid
@@ -2178,7 +2234,7 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const readDraftRetentionRoster = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns, source
+           weird, speed_mark, potential, note, pronouns, robotoid, source
     FROM racers
     WHERE team_id = ?
     ORDER BY rowid
@@ -2190,7 +2246,7 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const readDraftPool = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns
+           weird, speed_mark, potential, note, pronouns, robotoid
     FROM racers
     WHERE source = 'draft' AND id NOT IN (SELECT racer_id FROM draft_picks)
     ORDER BY name
@@ -2309,6 +2365,14 @@ export function createLeagueStore(path = ":memory:") {
   const markSignedRacerAsMartyr = database.prepare(`
     UPDATE racers SET team_id = NULL, source = 'martyr' WHERE id = ?
   `);
+  const updateRacerRobotoid = database.prepare(`
+    UPDATE racers SET pronouns = 'It/It', robotoid = 1 WHERE id = ?
+  `);
+  const updateRacerIdentityAndStats = database.prepare(`
+    UPDATE racers
+    SET name = ?, control = ?, overtaking = ?, stamina = ?
+    WHERE id = ?
+  `);
   const readRookieDraftState = database.prepare(`
     SELECT * FROM rookie_draft_state WHERE season = ?
   `);
@@ -2342,7 +2406,7 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const readRookieDraftPool = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns
+           weird, speed_mark, potential, note, pronouns, robotoid
     FROM racers
     WHERE source = ? AND id NOT IN (
       SELECT racer_id FROM rookie_draft_picks WHERE season = ?
@@ -2387,28 +2451,28 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const readNonDraftFreeAgents = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns, team_id, source
+           weird, speed_mark, potential, note, pronouns, robotoid, team_id, source
     FROM racers
     WHERE team_id IS NULL AND source NOT IN ('draft', 'martyr', 'relegated')
     ORDER BY name
   `);
   const readAllFreeAgents = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns
+           weird, speed_mark, potential, note, pronouns, robotoid
     FROM racers
     WHERE team_id IS NULL AND source NOT IN ('martyr', 'relegated')
     ORDER BY name
   `);
   const readSignedRacers = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns, team_id, source
+           weird, speed_mark, potential, note, pronouns, robotoid, team_id, source
     FROM racers
     WHERE team_id IS NOT NULL
     ORDER BY team_id, name
   `);
   const readFreeAgentDirectory = database.prepare(`
     SELECT id, name, pace, control, overtaking, stamina, technical,
-           weird, speed_mark, potential, note, pronouns, team_id, source
+           weird, speed_mark, potential, note, pronouns, robotoid, team_id, source
     FROM racers
     WHERE team_id IS NULL AND source NOT IN ('martyr', 'relegated')
     ORDER BY name
@@ -2425,6 +2489,72 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const findRosterRacer = database.prepare(`
     SELECT id, team_id, source FROM racers WHERE id = ?
+  `);
+  const findSignedRacerFull = database.prepare(`
+    SELECT id, name, pace, control, overtaking, stamina, technical,
+           weird, speed_mark, potential, note, pronouns, robotoid, team_id, source
+    FROM racers WHERE id = ? AND team_id IS NOT NULL
+  `);
+  const readSeasonEvents = database.prepare(`
+    SELECT id, season, event_key, category, unique_key, text, occurred_at, payload_json
+    FROM season_events
+    WHERE season = ?
+    ORDER BY occurred_at DESC, id DESC
+  `);
+  const readSeasonEventsChronological = database.prepare(`
+    SELECT id, season, event_key, category, unique_key, text, occurred_at, payload_json
+    FROM season_events
+    WHERE season = ?
+    ORDER BY occurred_at, id
+  `);
+  const readSeasonEventByUniqueKey = database.prepare(`
+    SELECT id FROM season_events WHERE season = ? AND unique_key = ?
+  `);
+  const readSeasonEventRoll = database.prepare(`
+    SELECT * FROM season_event_rolls WHERE season = ? AND date_key = ?
+  `);
+  const insertSeasonEvent = database.prepare(`
+    INSERT INTO season_events (
+      season, event_key, category, unique_key, text, occurred_at, payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertSeasonEventRoll = database.prepare(`
+    INSERT OR IGNORE INTO season_event_rolls (season, date_key, rolled_at, event_id)
+    VALUES (?, ?, ?, ?)
+  `);
+  const readSeasonEventReads = database.prepare(`
+    SELECT event_id FROM season_event_reads WHERE username = ?
+  `);
+  const insertSeasonEventRead = database.prepare(`
+    INSERT OR IGNORE INTO season_event_reads (username, event_id, seen_at)
+    VALUES (?, ?, ?)
+  `);
+  const insertSeasonEventEffect = database.prepare(`
+    INSERT INTO season_event_effects (
+      event_id, season, type, team_id, racer_id, payload_json,
+      remaining_races, consumed_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)
+  `);
+  const readActiveSeasonEventEffects = database.prepare(`
+    SELECT * FROM season_event_effects
+    WHERE season = ? AND consumed_at IS NULL
+    ORDER BY id
+  `);
+  const deleteSeasonEventsForSeason = database.prepare("DELETE FROM season_events WHERE season = ?");
+  const deleteSeasonEventRollsForSeason = database.prepare("DELETE FROM season_event_rolls WHERE season = ?");
+  const deleteSeasonEventEffectsForSeason = database.prepare("DELETE FROM season_event_effects WHERE season = ?");
+  const consumeSeasonEventEffect = database.prepare(`
+    UPDATE season_event_effects SET consumed_at = ? WHERE id = ?
+  `);
+  const decrementSeasonEventEffect = database.prepare(`
+    UPDATE season_event_effects
+    SET remaining_races = remaining_races - 1
+    WHERE id = ? AND remaining_races IS NOT NULL
+  `);
+  const readCurrentSeasonEventEffectsForRacer = database.prepare(`
+    SELECT * FROM season_event_effects
+    WHERE season = ? AND racer_id = ? AND consumed_at IS NULL
+    ORDER BY id
   `);
   const insertTradeOffer = database.prepare(`
     INSERT INTO trade_offers (
@@ -2953,7 +3083,7 @@ export function createLeagueStore(path = ":memory:") {
     SELECT DISTINCT season FROM races ORDER BY season
   `);
   const readSeasonRacesForChampionship = database.prepare(`
-    SELECT id, season, entries_json, standings_json
+    SELECT id, season, week, race_number, course_name, entries_json, standings_json
     FROM races WHERE season = ? ORDER BY id
   `);
   const readRaceSummaries = database.prepare(`
@@ -3455,6 +3585,18 @@ export function createLeagueStore(path = ":memory:") {
     const team = teams.find((item) => item.id === teamId);
     if (!team) throw new Error("Unknown team.");
     const plan = validatePlan(team, readRoster.all(teamId), input);
+    const suspended = new Set(activeSeasonEventEffects(getActiveSeason())
+      .filter((effect) => (
+        effect.team_id === teamId
+        && effect.racer_id
+        && ["suspension", "speed_madness_recovery"].includes(effect.type)
+      ))
+      .map((effect) => effect.racer_id));
+    const suspendedAssignment = plan.lineup.find((assignment) => suspended.has(assignment.driverId));
+    if (suspendedAssignment) {
+      const racer = readRoster.all(teamId).find((item) => item.id === suspendedAssignment.driverId);
+      throw new Error(`${racer?.name || "That driver"} is unavailable and cannot be placed in the relay plan.`);
+    }
 
     database.exec("BEGIN");
     try {
@@ -3794,6 +3936,432 @@ export function createLeagueStore(path = ":memory:") {
     return getDarkSacrifice(season, { teamId });
   }
 
+  function seasonEventDateKey(date) {
+    const parts = easternParts(date);
+    return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+  }
+
+  function seasonEventRollAtForKey(dateKey) {
+    const [year, month, day] = dateKey.split("-").map(Number);
+    return easternWallTimeToDate({ year, month, day }, 6, 0);
+  }
+
+  function seasonEventDateKeysThrough(firstRaceAt, now = new Date()) {
+    if (!firstRaceAt) return [];
+    const keys = [];
+    let parts = easternParts(new Date(firstRaceAt));
+    for (let guard = 0; guard < 35; guard += 1) {
+      const key = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+      const rollAt = seasonEventRollAtForKey(key);
+      if (rollAt > now) break;
+      keys.push(key);
+      parts = addEasternDays(parts, 1);
+    }
+    return keys;
+  }
+
+  function publicSeasonEvent(row) {
+    return {
+      id: row.id,
+      season: row.season,
+      eventKey: row.event_key,
+      category: row.category,
+      text: row.text,
+      occurredAt: row.occurred_at,
+      payload: row.payload_json ? JSON.parse(row.payload_json) : {},
+    };
+  }
+
+  function seasonMvdMap(season) {
+    const raceRows = readSeasonRacesForChampionship.all(season);
+    const map = new Map();
+    for (const standing of calculateSeasonChampionships(raceRows).mvds) {
+      map.set(standing.racerId, standing);
+    }
+    return map;
+  }
+
+  function racerMvdPoints(racer, mvdMap) {
+    return mvdMap.get(racer.id)?.pointUnits || 0;
+  }
+
+  function bestTeamDriver(teamId, signed, mvdMap) {
+    return signed
+      .filter((racer) => racer.team_id === teamId)
+      .sort((a, b) => racerMvdPoints(b, mvdMap) - racerMvdPoints(a, mvdMap)
+        || a.name.localeCompare(b.name))[0] || null;
+  }
+
+  function leastScoringSignedDriver(signed, mvdMap) {
+    return [...signed].sort((a, b) => racerMvdPoints(a, mvdMap) - racerMvdPoints(b, mvdMap)
+      || a.name.localeCompare(b.name))[0] || null;
+  }
+
+  function randomItem(items, random) {
+    if (!items.length) return null;
+    return items[Math.floor(random() * items.length)];
+  }
+
+  function splitDriverName(name) {
+    const parts = String(name).trim().split(/\s+/);
+    return {
+      first: parts[0] || name,
+      last: parts.slice(1).join(" ") || parts[0] || name,
+    };
+  }
+
+  function pitCoachDescriptionForTeam(teamId, season) {
+    const selection = readPitCoachSelections.all(season).find((coach) => coach.team_id === teamId);
+    const specialty = PIT_COACH_SPECIALTIES.find((item) => item.key === selection?.specialty_key);
+    return {
+      name: selection?.coach_name || "their Pit Coach",
+      specialty: specialty?.description || "generic effect",
+    };
+  }
+
+  function lastRaceForSeason(season) {
+    return readSeasonRacesForChampionship.all(season).at(-1) || null;
+  }
+
+  function shortestRelayDriverLastRace(teamId, season, mvdMap) {
+    const race = lastRaceForSeason(season);
+    if (!race) return null;
+    const entries = JSON.parse(race.entries_json).filter((entry) => entry.teamId === teamId);
+    const stints = entries.flatMap((entry) => (entry.stints || []).map((stint) => ({
+      driver: stint.driver,
+      laps: stint.end - stint.start + 1,
+    })));
+    return stints
+      .sort((a, b) => a.laps - b.laps
+        || racerMvdPoints({ id: a.driver.id }, mvdMap) - racerMvdPoints({ id: b.driver.id }, mvdMap)
+        || a.driver.name.localeCompare(b.driver.name))[0]?.driver || null;
+  }
+
+  function mostRecentRaceName(season) {
+    const race = lastRaceForSeason(season);
+    return race ? `Race ${race.race_number} at ${race.course_name || "the most recent course"}` : "the most recent race";
+  }
+
+  function markSeasonEventRead(username, eventId) {
+    if (!username || !eventId) return;
+    insertSeasonEventRead.run(username, eventId, new Date().toISOString());
+  }
+
+  function eligibleSeasonEventCandidates(season, random) {
+    const signed = readSignedRacers.all();
+    if (!signed.length) return [];
+    const mvdMap = seasonMvdMap(season);
+    const events = readSeasonEventsChronological.all(season);
+    const eventKeys = new Set(events.map((event) => event.event_key));
+    const uniqueKeys = new Set(events.map((event) => event.unique_key).filter(Boolean));
+    const usedVariableValues = new Set();
+    for (const event of events) {
+      const payload = event.payload_json ? JSON.parse(event.payload_json) : {};
+      for (const value of payload.variableValues || []) {
+        usedVariableValues.add(`${event.event_key}:${value}`);
+      }
+    }
+    const asscastCount = events.filter((event) => event.text.includes("ASSCAST with Mav McCool")).length;
+    const seriesStarted = eventKeys.has("series-1-1");
+    const seriesComplete = eventKeys.has("series-1-5");
+    const asscastAllowed = !seriesStarted || seriesComplete;
+    const candidates = [];
+    const addCandidate = (candidate) => {
+      if (candidate.uniqueKey && uniqueKeys.has(candidate.uniqueKey)) return;
+      if ((candidate.variableValues || []).some((value) => usedVariableValues.has(`${candidate.key}:${value}`))) return;
+      if (candidate.variableValues?.length) {
+        candidate.payload = {
+          ...(candidate.payload || {}),
+          variableValues: candidate.variableValues,
+        };
+      }
+      candidates.push(candidate);
+    };
+    const team = randomItem(teams, random);
+    const randomSigned = () => randomItem(signed, random);
+    const randomSignedWithTeam = () => {
+      const racer = randomSigned();
+      return racer ? { racer, team: teams.find((item) => item.id === racer.team_id) } : null;
+    };
+
+    if (asscastAllowed) {
+      for (const [index, text] of [
+        "boasted, \"Mav, without me their whole operation would fall apart. I'm a saint over there, and it's kinda awkward because I just... like... don't like our manager at all.\"",
+        "said, \"Ya know, I might be unstoppable, Mav. That sounds dickish but at this point it feels like no one else is really even trying. At least, not on my team.\"",
+      ].entries()) {
+        const driver = bestTeamDriver(team.id, signed, mvdMap);
+        if (driver) addCandidate({
+          key: `asscast-top-${index + 1}`,
+          category: "flavor",
+          uniqueKey: `asscast-top-${index + 1}`,
+          text: `During an appearance on the podcast ASSCAST with Mav McCool, ${driver.name} of ${team.name} ${text}`,
+        });
+      }
+      const least = leastScoringSignedDriver(signed, mvdMap);
+      if (least) addCandidate({
+        key: "asscast-least",
+        category: "flavor",
+        uniqueKey: "asscast-least",
+        text: `In a tearful moment on the podcast ASSCAST with Mav McCool, ${least.name} said, "I just got a lot of stuff going on right now, Mav. Like ok, I get it, I'm an embarrassment! Almost makes me think about The Decelerator..."`,
+      });
+      const shortDriver = shortestRelayDriverLastRace(team.id, season, mvdMap);
+      if (shortDriver) {
+        const coach = pitCoachDescriptionForTeam(team.id, season);
+        addCandidate({
+          key: "asscast-short-stint",
+          category: "flavor",
+          uniqueKey: "asscast-short-stint",
+          text: `On the podcast ASSCAST with Mav McCool, ${shortDriver.name} of ${team.name} said, "I'm tired of getting the scraps, Mav. ${coach.name} just has it out for me. Ha, get this, did you know ${coach.name}'s specialty is '${coach.specialty}'? Like, the fuck is that?"`,
+        });
+      }
+      const mud = randomSignedWithTeam();
+      if (mud) addCandidate({
+        key: "asscast-refusal",
+        category: "flavor",
+        uniqueKey: "asscast-refusal",
+        text: `When pressed to fling a little mud on the podcast ASSCAST with Mav McCool, ${mud.racer.name} of ${mud.team?.name || "their team"} said, "I'm tired of this, Mr. McCool. You are  an odious weasel, and I will not denigrate my siblings in the eternal search for speed simply for the amusement of yourself and your listeners."`,
+      });
+    }
+
+    const dinnerPlaces = ["Alinea", "a Denny's"];
+    const dinnerMoods = ["gazing longingly into each other's eyes", "deep in conversation"];
+    for (const place of dinnerPlaces) {
+      const uniqueKey = `dinner:${place}`;
+      if (uniqueKeys.has(uniqueKey)) continue;
+      const otherTeam = randomItem(teams.filter((item) => item.id !== team.id), random);
+      const driver = bestTeamDriver(team.id, signed, mvdMap);
+      const mood = randomItem(dinnerMoods, random);
+      if (driver && otherTeam) addCandidate({
+        key: "dinner",
+        category: "flavor",
+        uniqueKey,
+        variableValues: [place, mood],
+        text: `${driver.name} was seen having dinner with ${otherTeam.name}'s manager at ${place}, ${mood}.`,
+      });
+    }
+
+    for (const product of ["cook book", "memoir", "docuseries", "biopic", "YA novel"]) {
+      const uniqueKey = `release:${product}`;
+      if (uniqueKeys.has(uniqueKey)) continue;
+      const pick = randomSignedWithTeam();
+      const title = randomItem(["Life in the ASS Lane", "Assume the Pole Position", "If I Slow Down I Will Actually Die", "Don't Cry for Me, Nagasaki", "If I Did It: Confessions of the Killer"], random);
+      if (pick) addCandidate({
+        key: "release",
+        category: "flavor",
+        uniqueKey,
+        variableValues: [product, title],
+        text: `${pick.racer.name} of ${pick.team?.name || "their team"} has just released a new ${product} titled ${title}.`,
+      });
+    }
+
+    for (const product of ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"]) {
+      const uniqueKey = `ad:${product}`;
+      if (uniqueKeys.has(uniqueKey)) continue;
+      const pick = randomSignedWithTeam();
+      if (pick) addCandidate({
+        key: "ad",
+        category: "flavor",
+        uniqueKey,
+        variableValues: [product],
+        text: `${pick.racer.name} of ${pick.team?.name || "their team"} appeared in an ad for ${product}, saying "After a long day of going as fast as Velocitus will let me, nothing winds me down quite like ${product}!"`,
+      });
+    }
+
+    const robot = randomItem(signed.filter((racer) => !racer.robotoid), random);
+    if (robot) addCandidate({
+      key: "robotoid",
+      category: "flavor",
+      uniqueKey: "robotoid",
+      text: `${robot.name} from ${teams.find((item) => item.id === robot.team_id)?.name || "their team"} has been seen "plugging into" a high-voltage outlet by the pit lane. Rumors begin to swirl that they are, in fact, a robotoid.`,
+      apply: (eventId, occurredAt) => {
+        updateRacerRobotoid.run(robot.id);
+        insertSeasonEventEffect.run(eventId, season, "robotoid", robot.team_id, robot.id, "{}", null, occurredAt);
+      },
+    });
+
+    const nextSeriesIndex = [1, 2, 3, 4, 5].find((index) => !eventKeys.has(`series-1-${index}`));
+    if (nextSeriesIndex && (nextSeriesIndex > 1 || asscastCount >= 2)) {
+      const texts = {
+        1: "Former ASSCAR driver and popular media personality Mav McCool (host of ASSCAST with Mav McCool, and Dora The Explorer, LIVE!) has been named as the defendant in 12 class action lawsuits. Among the groups suing him are The Church of Velocitus, The East Coast Prison Guards' Union, Spain, and women.",
+        2: "12-time concurrent class-action defendant Mav McCool has failed to appear in court. A bench warrant has been put out for his arrest.",
+        3: "Mav McCool has disappeared from the public and private eye, and his status is unknown at this time. There is still a warrant out for his arrest. If anyone has any information about his whereabouts please contact 1-800-ASSCALL.",
+        4: `During qualifiers for ${mostRecentRaceName(season)}, the unthinkable occurred: a glorious member of our benevolent Stewards (may their song ring forever) was assassinated. Interpol agents and S.U.R.G.E operators have been activated to ensure the identification and capture of the craven killer.`,
+        5: "The heretical assassin of The Slain Steward has been captured by S.U.R.G.E operators, and has been identified as former ASSCAR driver and media personality Mav McCool. His legacy is now one of cowardice and shame.",
+      };
+      addCandidate({
+        key: `series-1-${nextSeriesIndex}`,
+        category: "flavor",
+        uniqueKey: `series-1-${nextSeriesIndex}`,
+        text: texts[nextSeriesIndex],
+      });
+    }
+
+    const yipsOptions = ["contemplates nothingness", "shows up with a hangover", "has a falling out with their mother"];
+    for (const cause of yipsOptions) {
+      const uniqueKey = `yips:${cause}`;
+      if (uniqueKeys.has(uniqueKey)) continue;
+      const pick = randomSignedWithTeam();
+      if (pick) addCandidate({
+        key: "yips",
+        category: "mechanical",
+        uniqueKey,
+        variableValues: [cause],
+        text: `${pick.racer.name} on ${pick.team?.name || "their team"} ${cause} and blows it during their practice laps. They get the yips and bomb during their next qualifier, giving their car last place on the grid.`,
+        apply: (eventId, occurredAt) => insertSeasonEventEffect.run(
+          eventId, season, "yips_next_qualifier", pick.racer.team_id, pick.racer.id, "{}", null, occurredAt,
+        ),
+      });
+    }
+
+    const markTarget = randomItem(signed.filter((racer) => !racer.speed_mark), random);
+    if (markTarget) addCandidate({
+      key: "mark-granted",
+      category: "mechanical",
+      text: `${markTarget.name} on ${teams.find((item) => item.id === markTarget.team_id)?.name || "their team"} has a private audience with The Stewards (of eternal might) and is bestowed with The Mark of The Speed God.`,
+      apply: (eventId, occurredAt) => {
+        grantSpeedMark.run(markTarget.id);
+        insertSeasonEventEffect.run(eventId, season, "mark_granted", markTarget.team_id, markTarget.id, "{}", null, occurredAt);
+      },
+    });
+
+    const suspensionTarget = randomItem(signed.filter((racer) => (
+      (readCompletedRaceLaps.all().filter((lap) => lap.racer_id === racer.id && lap.season === season).length) >= 20
+    )), random);
+    if (suspensionTarget) addCandidate({
+      key: "suspension",
+      category: "mechanical",
+      text: `${suspensionTarget.name} on ${teams.find((item) => item.id === suspensionTarget.team_id)?.name || "their team"} has been seen cavorting with Decelerationists. As penance, The Stewards (of boundless mercy) have suspended them for the next two races.`,
+      apply: (eventId, occurredAt) => insertSeasonEventEffect.run(
+        eventId, season, "suspension", suspensionTarget.team_id, suspensionTarget.id, "{}", 2, occurredAt,
+      ),
+    });
+
+    const madnessTarget = randomSignedWithTeam();
+    if (madnessTarget) addCandidate({
+      key: "speed-madness-next",
+      category: "mechanical",
+      text: `Practice laps appear to have left ${madnessTarget.racer.name} of ${madnessTarget.team?.name || "their team"} teetering on the edge of sanity. Pit crews have heard them muttering incessantly to themselves, and league doctors say that the next time they race they will likely succumb to Speed Madness.`,
+      apply: (eventId, occurredAt) => insertSeasonEventEffect.run(
+        eventId, season, "speed_madness_next_race", madnessTarget.racer.team_id, madnessTarget.racer.id, "{}", null, occurredAt,
+      ),
+    });
+
+    const bodyTeam = randomItem(teams.filter((item) => signed.filter((racer) => racer.team_id === item.id).length >= 4), random);
+    if (bodyTeam && !uniqueKeys.has("body-envy")) {
+      const teamRacers = signed.filter((racer) => racer.team_id === bodyTeam.id);
+      const ranked = [...teamRacers].sort((a, b) => racerMvdPoints(b, mvdMap) - racerMvdPoints(a, mvdMap));
+      const middle = ranked.slice(1, -1);
+      if (middle.length >= 2) {
+        const driverA = middle[0];
+        const driverB = middle[1];
+        const nameA = splitDriverName(driverA.name);
+        const nameB = splitDriverName(driverB.name);
+        const nextA = `${nameA.first} ${nameB.last}`;
+        const nextB = `${nameB.first} ${nameA.last}`;
+        addCandidate({
+          key: "body-envy",
+          category: "mechanical",
+          uniqueKey: "body-envy",
+          text: `${driverA.name} and ${driverB.name} have been diagnosed with Simultaneous Body Envy. To ease their symptoms, they have undergone a controversial piece-wise body transplant with each other, and are now requesting to be called ${nextA} and ${nextB}. Who knows how this will affect their racing...`,
+          apply: (eventId, occurredAt) => {
+            const stats = ["control", "overtaking", "stamina"].reduce((acc, stat) => {
+              const aValue = driverA[stat];
+              const bValue = driverB[stat];
+              if (random() < 0.5) {
+                acc.a[stat] = aValue;
+                acc.b[stat] = bValue;
+              } else {
+                acc.a[stat] = bValue;
+                acc.b[stat] = aValue;
+              }
+              return acc;
+            }, { a: {}, b: {} });
+            updateRacerIdentityAndStats.run(nextA, stats.a.control, stats.a.overtaking, stats.a.stamina, driverA.id);
+            updateRacerIdentityAndStats.run(nextB, stats.b.control, stats.b.overtaking, stats.b.stamina, driverB.id);
+            insertSeasonEventEffect.run(eventId, season, "body_envy", bodyTeam.id, driverA.id, JSON.stringify({ pairedRacerId: driverB.id }), null, occurredAt);
+          },
+        });
+      }
+    }
+
+    return candidates;
+  }
+
+  function createSeasonEventForDate(season, dateKey) {
+    const rollAt = seasonEventRollAtForKey(dateKey).toISOString();
+    if (readSeasonEventRoll.get(season, dateKey)) return null;
+    const random = seededRandom(hashText(`season-event:${season}:${dateKey}`));
+    if (random() >= 0.42) {
+      insertSeasonEventRoll.run(season, dateKey, rollAt, null);
+      return null;
+    }
+    const candidates = eligibleSeasonEventCandidates(season, random);
+    const candidate = randomItem(candidates, random);
+    if (!candidate) {
+      insertSeasonEventRoll.run(season, dateKey, rollAt, null);
+      return null;
+    }
+    const result = insertSeasonEvent.run(
+      season,
+      candidate.key,
+      candidate.category,
+      candidate.uniqueKey || null,
+      candidate.text,
+      rollAt,
+      JSON.stringify(candidate.payload || {}),
+    );
+    const eventId = Number(result.lastInsertRowid);
+    if (candidate.apply) candidate.apply(eventId, rollAt);
+    insertSeasonEventRoll.run(season, dateKey, rollAt, eventId);
+    return readSeasonEventsChronological.all(season).find((event) => event.id === eventId) || null;
+  }
+
+  function maintainSeasonEvents(season = getActiveSeason(), now = new Date()) {
+    const draft = readDraftState.get();
+    if (!draft?.started_at || draft.status !== "complete") return;
+    const center = getRaceCenter(season);
+    if (center.seasonComplete) return;
+    for (const dateKey of seasonEventDateKeysThrough(firstRaceAtForDraft(draft.started_at), now)) {
+      createSeasonEventForDate(season, dateKey);
+    }
+  }
+
+  function activeSeasonEventEffects(season = getActiveSeason()) {
+    return readActiveSeasonEventEffects.all(season);
+  }
+
+  function activeRaceLimitedSeasonEventEffects(season, createdBefore = null) {
+    return activeSeasonEventEffects(season).filter((effect) => (
+      ["suspension", "speed_madness_recovery"].includes(effect.type)
+      && Number(effect.remaining_races || 0) > 0
+      && (!createdBefore || String(effect.created_at) < String(createdBefore))
+    ));
+  }
+
+  function advanceRaceLimitedSeasonEventEffects(season, createdBefore = null) {
+    const now = new Date().toISOString();
+    for (const effect of activeRaceLimitedSeasonEventEffects(season, createdBefore)) {
+      decrementSeasonEventEffect.run(effect.id);
+    }
+    for (const effect of activeSeasonEventEffects(season)) {
+      if (
+        ["suspension", "speed_madness_recovery"].includes(effect.type)
+        && Number(effect.remaining_races || 0) <= 0
+      ) {
+        consumeSeasonEventEffect.run(now, effect.id);
+      }
+    }
+  }
+
+  function markSeasonEventsSeen(username, eventIds = []) {
+    if (!username) throw new Error("Please log in first.");
+    const now = new Date().toISOString();
+    for (const eventId of eventIds.map(Number).filter(Boolean)) {
+      insertSeasonEventRead.run(username, eventId, now);
+    }
+    return getSeasonEvents(getActiveSeason(), { username });
+  }
+
   function getInMemoriam() {
     const careerByRacer = new Map();
     const allCareerRaces = readAllRacesForCareer.all()
@@ -3846,10 +4414,19 @@ export function createLeagueStore(path = ":memory:") {
       .sort((a, b) => String(b.diedAt).localeCompare(String(a.diedAt)));
   }
 
-  function getSeasonEvents(season = getActiveSeason()) {
+  function getSeasonEvents(season = getActiveSeason(), session = {}) {
+    maintainSeasonEvents(season);
+    const events = readSeasonEvents.all(season).map(publicSeasonEvent);
+    const username = session?.username || null;
+    const seen = username
+      ? new Set(readSeasonEventReads.all(username).map((row) => Number(row.event_id)))
+      : new Set();
     return {
       season,
-      events: [],
+      events,
+      unreadEventIds: username
+        ? events.filter((event) => !seen.has(event.id)).map((event) => event.id)
+        : [],
     };
   }
 
@@ -5740,7 +6317,12 @@ export function createLeagueStore(path = ":memory:") {
         seasonChampionships.teams,
         trackName,
         forecastCondition,
-        forecastSeed,
+        {
+          seed: forecastSeed,
+          yipsRacerIds: new Set(activeSeasonEventEffects(season)
+            .filter((effect) => effect.type === "yips_next_qualifier" && effect.racer_id)
+            .map((effect) => effect.racer_id)),
+        },
       )
         .map((entry) => ({
           id: entry.id,
@@ -5755,6 +6337,8 @@ export function createLeagueStore(path = ":memory:") {
             .filter((incident) => incident.type === "mishap").length,
           qualifierSpins: (entry.qualifier?.incidents || [])
             .filter((incident) => incident.type === "spin").length,
+          qualifierYips: (entry.qualifier?.incidents || [])
+            .filter((incident) => incident.type === "yips").length,
           firstLapPenalty: entry.startingGridPenalty,
         }))
         .sort((a, b) => a.gridPosition - b.gridPosition);
@@ -5906,6 +6490,21 @@ export function createLeagueStore(path = ":memory:") {
       league.cars,
       Object.fromEntries(readBrands.all().map((brand) => [brand.team_id, brand])),
     );
+    const activeEffects = activeSeasonEventEffects(season);
+    const suspendedRacerIds = new Set(activeEffects
+      .filter((effect) => ["suspension", "speed_madness_recovery"].includes(effect.type) && effect.racer_id)
+      .map((effect) => effect.racer_id));
+    const suspendedDriver = baseEntries
+      .flatMap((entry) => entry.stints.map((stint) => stint.driver))
+      .filter(Boolean)
+      .find((driver) => suspendedRacerIds.has(driver.id));
+    if (suspendedDriver) {
+      throw new Error(`${suspendedDriver.name} is unavailable and cannot race.`);
+    }
+    const yipsEffects = activeEffects.filter((effect) => effect.type === "yips_next_qualifier" && effect.racer_id);
+    const yipsRacerIds = new Set(yipsEffects.map((effect) => effect.racer_id));
+    const speedMadnessEffects = activeEffects.filter((effect) => effect.type === "speed_madness_next_race" && effect.racer_id);
+    const speedMadnessRacerIds = new Set(speedMadnessEffects.map((effect) => effect.racer_id));
     const courseName = courseNameForSeasonWeek(season, week);
     const forecastSeed = `season-${season}-week-${week}-race-${seasonRaceNumber}`;
     const condition = forcedCondition || selectRaceCondition(courseName, forecastSeed);
@@ -5915,12 +6514,13 @@ export function createLeagueStore(path = ":memory:") {
       getRaceCenter(season).championship,
       courseName,
       condition,
-      forecastSeed,
+      { seed: forecastSeed, yipsRacerIds },
     );
     const race = simulateRace(entries, seed, {
       courseName,
       condition,
       pitCoachesByTeam: pitCoachRaceContext(season),
+      preRaceSpeedMadnessRacerIds: speedMadnessRacerIds,
     });
     const pole = [...entries].sort((a, b) => a.startingGridPosition - b.startingGridPosition)[0];
     if (pole) {
@@ -6000,6 +6600,12 @@ export function createLeagueStore(path = ":memory:") {
           insertRaceParticipation.run(developmentWeek, racerId, entry.teamId, usedAt);
         }
       }
+      const usedRacerIds = new Set(entries.flatMap((entry) => entry.stints.map((stint) => stint.driver.id)));
+      for (const effect of [...yipsEffects, ...speedMadnessEffects]) {
+        if (usedRacerIds.has(effect.racer_id)) {
+          consumeSeasonEventEffect.run(createdAt, effect.id);
+        }
+      }
       setActiveRace.run(raceId, createdAt);
       database.exec("COMMIT");
       return getRace(raceId);
@@ -6042,8 +6648,22 @@ export function createLeagueStore(path = ":memory:") {
     const race = getRace(raceId);
     database.exec("BEGIN IMMEDIATE");
     try {
+      advanceRaceLimitedSeasonEventEffects(race.season, race.createdAt);
       for (const event of race.events) {
         if (event.markGranted && event.racerId) grantSpeedMark.run(event.racerId);
+        if (event.speedMadnessRecoveryRacerId) {
+          const entry = race.entries.find((item) => item.id === event.entryId);
+          insertSeasonEventEffect.run(
+            null,
+            race.season,
+            "speed_madness_recovery",
+            entry?.teamId || null,
+            event.speedMadnessRecoveryRacerId,
+            "{}",
+            1,
+            new Date().toISOString(),
+          );
+        }
       }
       updateRaceRecap.run(generateRaceRecap(race, raceDebutContext(race)), race.id);
       setActiveRace.run(null, new Date().toISOString());
@@ -6097,6 +6717,9 @@ export function createLeagueStore(path = ":memory:") {
       deleteMartyrStateForSeason.run(season);
       deleteDarkSacrificeVotesForSeason.run(season);
       deleteDarkSacrificeStateForSeason.run(season);
+      deleteSeasonEventEffectsForSeason.run(season);
+      deleteSeasonEventRollsForSeason.run(season);
+      deleteSeasonEventsForSeason.run(season);
       deleteSeasonHistoryForSeason.run(season);
       clearDraftRetentionSelections.run(season);
       clearPitCoachSelections.run(season);
@@ -6565,6 +7188,7 @@ export function createLeagueStore(path = ":memory:") {
     getManagerSession,
     loginManager,
     makeDraftPick,
+    markSeasonEventsSeen,
     markMediaEntrySeen,
     maintainRookieDraft,
     makeRookieDraftPick,
@@ -6596,3 +7220,4 @@ export function createLeagueStore(path = ":memory:") {
 function readAllRacerNamesSafe(database) {
   return database.prepare("SELECT name FROM racers").all().map((row) => row.name);
 }
+
