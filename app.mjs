@@ -1642,7 +1642,22 @@ function showSeasonCeremony({ automatic = false } = {}) {
       </article>`;
   }).join("");
   elements.seasonCeremonyHonors.innerHTML = teamHonors + mvdHonors;
-  elements.seasonCeremonyDialog.showModal();
+  let openAttempts = 0;
+  const openCeremonyDialog = () => {
+    if (elements.seasonCeremonyDialog.open) return;
+    if (elements.darkSacrificeResultDialog?.open) {
+      openAttempts += 1;
+      if (openAttempts < 20) setTimeout(openCeremonyDialog, 50);
+      return;
+    }
+    try {
+      elements.seasonCeremonyDialog.showModal();
+    } catch {
+      openAttempts += 1;
+      if (openAttempts < 20) setTimeout(openCeremonyDialog, 50);
+    }
+  };
+  openCeremonyDialog();
 }
 
 function closeSeasonCeremony() {
@@ -3356,6 +3371,7 @@ async function closeDarkSacrificeResult() {
   elements.darkSacrificeResultDialog.close();
   try {
     await Promise.all([
+      loadDarkSacrifice(),
       loadRaceCenter(),
       loadLeagueState(),
       loadRacerDirectory(),
@@ -3370,6 +3386,11 @@ async function closeDarkSacrificeResult() {
     renderNewsTicker();
   } catch {
     // If the refresh hiccups, still try with whatever state is already loaded.
+  }
+  try {
+    localStorage.removeItem(seasonCeremonyStorageKey());
+  } catch {
+    // The ceremony can still open when browser storage is unavailable.
   }
   showSeasonCeremony({ automatic: false });
 }
