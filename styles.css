@@ -1071,6 +1071,7 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .season-event-row p { margin: 0; color: var(--muted); line-height: 1.5; }
 .season-events-dialog { width: min(720px, calc(100% - 28px)); }
 .season-events-card { max-height: min(760px, calc(100vh - 32px)); overflow: hidden; display: flex; flex-direction: column; }
+.season-events-card .primary-button { border: 0; outline: 0; }
 .season-events-popup-list { display: grid; gap: 12px; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
 .season-event-popup-row {
   border: 1px solid var(--line);
