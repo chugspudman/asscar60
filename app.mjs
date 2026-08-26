@@ -3347,14 +3347,31 @@ function showDarkSacrificeResult({ automatic = false } = {}) {
   return true;
 }
 
-function closeDarkSacrificeResult() {
+async function closeDarkSacrificeResult() {
   try {
     localStorage.setItem(darkSacrificeResultStorageKey(), "true");
   } catch {
     // The result can still be dismissed when browser storage is unavailable.
   }
   elements.darkSacrificeResultDialog.close();
-  showSeasonCeremony({ automatic: true });
+  try {
+    await Promise.all([
+      loadRaceCenter(),
+      loadLeagueState(),
+      loadRacerDirectory(),
+      loadInMemoriam(),
+    ]);
+    renderTeamProfile();
+    renderLeague();
+    renderRacerDirectories();
+    renderInMemoriam();
+    renderRaceArchive();
+    renderRaceControls();
+    renderNewsTicker();
+  } catch {
+    // If the refresh hiccups, still try with whatever state is already loaded.
+  }
+  showSeasonCeremony({ automatic: false });
 }
 
 async function loadTransactions() {
