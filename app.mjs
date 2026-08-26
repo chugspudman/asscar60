@@ -2250,11 +2250,12 @@ function renderInMemoriam() {
 
 function renderSeasonEvents() {
   if (!elements.seasonEventsList) return;
+  const totalEvents = state.seasonEvents.length;
   elements.seasonEventsList.innerHTML = state.seasonEvents.length
-    ? state.seasonEvents.map((event) => `
+    ? state.seasonEvents.map((event, index) => `
       <article class="season-event-row">
         <div class="season-event-heading">
-          <strong>${escapeHtml(event.title || "Season Event")}</strong>
+          <strong>Event ${totalEvents - index}</strong>
           <small>${escapeHtml(formatMediaDate(event.occurredAt || event.createdAt || event.date))}</small>
         </div>
         <p>${escapeHtml(event.summary || event.text || "")}</p>
