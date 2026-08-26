@@ -4964,7 +4964,6 @@ async function initialize() {
     }
     showDarkSacrificeResult({ automatic: !isSeasonCeremonyPreview() });
     showSeasonCeremony({ automatic: !isSeasonCeremonyPreview() });
-    showSeasonEventsPopup();
     if (navigationMode === "rules") showRulesPage();
     if (navigationMode === "media") await showMediaPage();
     if (navigationMode === "memoriam") await showMemoriamPage();
@@ -5204,6 +5203,7 @@ async function startApp() {
   if (appStarted) {
     showGameShell();
     stabilizeInitialLayout();
+    showSeasonEventsPopup();
     return;
   }
   try {
@@ -5211,6 +5211,7 @@ async function startApp() {
     showGameShell();
     renderNewsTicker();
     stabilizeInitialLayout();
+    showSeasonEventsPopup();
     raceCenterInterval = setInterval(syncRaceCenter, 2_000);
     draftInterval = setInterval(syncDraft, 2_000);
     rookieDraftInterval = setInterval(syncRookieDraft, 2_000);
