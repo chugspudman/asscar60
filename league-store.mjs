@@ -5059,7 +5059,8 @@ export function createLeagueStore(path = ":memory:") {
     ) return;
     const best = readRookieDraftPool.all(rookieSource(season), season)
       .sort((a, b) => (
-        b.control - a.control
+        (b.control + b.overtaking + b.stamina) - (a.control + a.overtaking + a.stamina)
+        || b.control - a.control
         || b.overtaking - a.overtaking
         || b.stamina - a.stamina
         || b.potential - a.potential
