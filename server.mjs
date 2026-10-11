@@ -427,7 +427,13 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && requestedPath === "/api/stewards/auto-pick-draft") {
       requireStewards(request);
-      sendJson(response, 200, store.autoPickCurrentDraft());
+      sendJson(response, 200, store.autoPickCurrentDraftPick());
+      return;
+    }
+
+    if (request.method === "POST" && requestedPath === "/api/stewards/skip-draft-vote") {
+      requireStewards(request);
+      sendJson(response, 200, store.skipDraftStartVote());
       return;
     }
 

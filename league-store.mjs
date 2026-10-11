@@ -3192,7 +3192,7 @@ export function createLeagueStore(path = ":memory:") {
     WHERE racer_id = ? AND season = ? AND race_id != ?
   `);
   const readLatestCompletedSeasonRace = database.prepare(`
-    SELECT *
+    SELECT id, season, week, race_number, course_name, entries_json, standings_json
     FROM races
     WHERE season = ?
       AND id != COALESCE((SELECT active_race_id FROM league_runtime WHERE id = 1), -1)
@@ -5423,12 +5423,83 @@ export function createLeagueStore(path = ":memory:") {
 
   function bestDraftPickCandidate(pool) {
     return [...pool].sort((a, b) => (
-      b.control - a.control
+      (b.control + b.overtaking + b.stamina) - (a.control + a.overtaking + a.stamina)
+      || b.control - a.control
       || b.overtaking - a.overtaking
       || b.stamina - a.stamina
       || b.potential - a.potential
       || a.name.localeCompare(b.name)
     ))[0];
+  }
+
+  function autoPickCurrentDraftPick() {
+    const now = new Date();
+    const openingDraft = readDraftState.get();
+    if (openingDraft?.status === "active") {
+      const draft = getDraft();
+      const best = bestDraftPickCandidate(draft.pool);
+      if (!best) throw new Error("There are no available racers to auto-pick.");
+      makeDraftPick(best.id);
+      return getRaceCenter(getActiveSeason());
+    }
+
+    const season = getActiveSeason();
+    const rookieDraft = readRookieDraftState.get(season);
+    if (rookieDraft?.status === "active") {
+      const draft = getRookieDraft(season, now);
+      const best = bestDraftPickCandidate(draft.pool);
+      if (!best) throw new Error("There are no available rookies to auto-pick.");
+      recordRookiePick(best.id, true, season, now);
+      return getRaceCenter(season);
+    }
+
+    throw new Error("There is no active draft pick to auto-pick.");
+  }
+
+  function skipDraftStartVote() {
+    const now = new Date();
+    const season = getActiveSeason();
+    const racesRun = countSeasonRaces.get(season).count;
+    const rookieDraft = getRookieDraft(season, now);
+    if (racesRun >= 10 && rookieDraft.status === "voting") {
+      if (readManagerTeams.all().length < teams.length) {
+        throw new Error("Waiting for all teams to be assigned before the rookie draft can begin.");
+      }
+      for (const team of teams) {
+        insertRookieDraftInitiationVote.run(season, team.id, now.toISOString());
+      }
+      activateRookieDraftState.run(
+        new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString(),
+        season,
+      );
+      return getRookieDraft(season, now);
+    }
+
+    const openingDraft = getDraft();
+    if (openingDraft.status === "not_started") {
+      if (readManagerTeams.all().length < teams.length) {
+        throw new Error("Waiting for all teams to be assigned before the opening draft can begin.");
+      }
+      if (season > 1) {
+        const retentionSelections = readDraftRetentionSelections.all(season);
+        const retainersComplete = teams.every((team) => {
+          const retention = retentionSelections.find((item) => item.team_id === team.id);
+          return retention?.veteran_retention_id && retention?.rookie_retention_id;
+        });
+        if (!retainersComplete) {
+          throw new Error("All teams must select retainers before the opening draft can begin.");
+        }
+      }
+      if (readPitCoachSelections.all(season).length < teams.length) {
+        throw new Error("All teams must select Pit Coach specialties before the opening draft can begin.");
+      }
+      for (const team of teams) {
+        insertDraftInitiationVote.run(season, team.id, now.toISOString(), null, null);
+      }
+      return maybeStartOpeningDraftAfterPrereqs({ session: {} });
+    }
+
+    throw new Error("There is no upcoming draft waiting for start votes.");
   }
 
   function autoPickCurrentDraft() {
@@ -5988,7 +6059,15 @@ export function createLeagueStore(path = ":memory:") {
   function buildMostRecentRaceSummaries(season = getActiveSeason()) {
     const row = readLatestCompletedSeasonRace.get(season);
     if (!row) return new Map();
-    const race = publicRace(row);
+    const race = {
+      id: row.id,
+      season: row.season,
+      week: row.week,
+      raceNumber: row.race_number,
+      courseName: row.course_name,
+      entries: JSON.parse(row.entries_json),
+      events: [],
+    };
     const entriesById = new Map((race.entries || []).map((entry) => [entry.id, entry]));
     const recentByRacer = new Map();
     const ensureRecent = (racer) => {
@@ -7502,6 +7581,8 @@ export function createLeagueStore(path = ":memory:") {
     finishActiveRaceNow,
     fastForwardToRace10,
     autoPickCurrentDraft,
+    autoPickCurrentDraftPick,
+    skipDraftStartVote,
     skipOpeningDraftAndMartyr,
     autoCompleteRookieReleases,
     createManagerSession,

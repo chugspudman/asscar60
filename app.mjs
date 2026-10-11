@@ -4983,6 +4983,8 @@ async function runStewardsAction(action, button = null) {
     "next-race": ["/api/races", "Starting next race..."],
     "finish-race": ["/api/stewards/finish-active-race", "Finishing current race..."],
     "race-10": ["/api/stewards/fast-forward-race-10", "Fast forwarding to Race 10..."],
+    "auto-pick-draft": ["/api/stewards/auto-pick-draft", "Auto-picking the current draft pick..."],
+    "skip-draft-vote": ["/api/stewards/skip-draft-vote", "Skipping draft-start voting..."],
     "skip-opening-draft": ["/api/stewards/skip-opening-draft", "Skipping opening draft and choosing an Initiation Martyr..."],
     "auto-rookie-releases": ["/api/stewards/auto-rookie-releases", "Auto-completing rookie roster releases..."],
     "next-season": ["/api/seasons/next", "Starting next season..."],
