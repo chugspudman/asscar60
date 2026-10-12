@@ -2367,6 +2367,7 @@ export function createLeagueStore(path = ":memory:") {
       AND id NOT IN (SELECT racer_id FROM draft_picks)
   `);
   const assignRacer = database.prepare("UPDATE racers SET team_id = ? WHERE id = ?");
+  const relegateRacerFromLeague = database.prepare("UPDATE racers SET team_id = NULL, source = 'relegated' WHERE id = ?");
   const increaseRacerControl = database.prepare("UPDATE racers SET control = MIN(10, control + 1) WHERE id = ?");
   const clearRosters = database.prepare("UPDATE racers SET team_id = NULL WHERE team_id IS NOT NULL");
   const countDraftPoolRacers = database.prepare(`
@@ -5166,7 +5167,7 @@ export function createLeagueStore(path = ":memory:") {
     database.exec("BEGIN IMMEDIATE");
     try {
       insertRookieRelease.run(season, teamId, racer.id, now.toISOString());
-      assignRacer.run(null, racer.id);
+      relegateRacerFromLeague.run(racer.id);
       const replacement = readRoster.all(teamId)[0];
       if (replacement) replaceRelayDriver.run(replacement.id, teamId, racer.id);
       repairTeamRelayPlan(teamId);
@@ -6871,9 +6872,12 @@ export function createLeagueStore(path = ":memory:") {
       throw new Error("The Stewards demand an Initiation Martyr before the first race.");
     }
     const rookieDraft = getRookieDraft(season);
-    if (seasonRacesRun >= 10 && rookieDraft.status !== "complete") {
-      throw new Error("The midseason rookie draft and roster releases must be completed before Race 11.");
+    if (seasonRacesRun >= 10 && !["complete", "releases"].includes(rookieDraft.status)) {
+      throw new Error("The midseason rookie draft must be completed before Race 11.");
     }
+    const rookieReleaseDnfTeamIds = seasonRacesRun >= 10 && rookieDraft.status === "releases"
+      ? rookieDraft.teamsAwaitingRelease || []
+      : [];
     const seasonRaceNumber = seasonRacesRun + 1;
     const week = Math.floor(seasonRacesRun / RACES_PER_WEEK) + 1;
     const raceNumber = countWeekRaces.get(season, week).count + 1;
@@ -6919,6 +6923,7 @@ export function createLeagueStore(path = ":memory:") {
       condition,
       pitCoachesByTeam: pitCoachRaceContext(season),
       preRaceSpeedMadnessRacerIds: speedMadnessRacerIds,
+      forcedDnfTeamIds: rookieReleaseDnfTeamIds,
     });
     const pole = [...entries].sort((a, b) => a.startingGridPosition - b.startingGridPosition)[0];
     if (pole) {
@@ -6994,11 +6999,14 @@ export function createLeagueStore(path = ":memory:") {
 
       const usedAt = createdAt;
       for (const entry of entries) {
+        if (rookieReleaseDnfTeamIds.includes(entry.teamId)) continue;
         for (const racerId of new Set(entry.stints.map((stint) => stint.driver.id))) {
           insertRaceParticipation.run(developmentWeek, racerId, entry.teamId, usedAt);
         }
       }
-      const usedRacerIds = new Set(entries.flatMap((entry) => entry.stints.map((stint) => stint.driver.id)));
+      const usedRacerIds = new Set(entries
+        .filter((entry) => !rookieReleaseDnfTeamIds.includes(entry.teamId))
+        .flatMap((entry) => entry.stints.map((stint) => stint.driver.id)));
       for (const effect of [...yipsEffects, ...speedMadnessEffects]) {
         if (usedRacerIds.has(effect.racer_id)) {
           consumeSeasonEventEffect.run(createdAt, effect.id);

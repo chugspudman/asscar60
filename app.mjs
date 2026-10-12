@@ -1367,7 +1367,7 @@ function renderRaceControls() {
   const martyrVoteRequired = state.raceCenter.seasonRacesRun === 0
     && state.martyr.status === "voting";
   const rookieDraftRequired = state.raceCenter.seasonRacesRun >= 10
-    && state.rookieDraft.status !== "complete";
+    && !["complete", "releases"].includes(state.rookieDraft.status);
   const openingDraftRequired = state.raceCenter.season > 1
     && state.raceCenter.seasonRacesRun === 0
     && state.draft.status !== "complete";
@@ -1518,7 +1518,9 @@ function renderNewsTicker() {
     text = "Vote to begin the rookie draft.";
   } else if (state.rookieDraft.status === "releases") {
     const awaiting = state.rookieDraft.teamsAwaitingRelease || [];
-    text = `Roster releases required: ${awaiting.map((teamId) => teams.find((team) => team.id === teamId)?.short || teamId).join(", ")}.`;
+    text = awaiting.includes(managedTeamId())
+      ? "Release a veteran in Admin before the next race, or your team will DNF."
+      : `Roster releases required: ${awaiting.map((teamId) => teams.find((team) => team.id === teamId)?.short || teamId).join(", ")}.`;
   } else if (state.raceCenter.raceScheduleComplete && state.darkSacrifice.status === "voting") {
     text = "The Decelerator waits.";
   } else if (state.raceCenter.seasonComplete) {
@@ -2629,6 +2631,11 @@ function needsPitCoachSelection() {
   return coach.required && !coach.complete;
 }
 
+function needsRookieVeteranRelease() {
+  return state.rookieDraft.status === "releases"
+    && (state.rookieDraft.teamsAwaitingRelease || []).includes(managedTeamId());
+}
+
 function renderAdminHeader() {
   if (elements.movesTeam) elements.movesTeam.textContent = managedTeamName();
   if (!elements.movesPitCoachHeader) return;
@@ -2717,6 +2724,54 @@ function renderPitCoachSelection() {
     elements.pitCoachMessage.textContent = required
       ? "The draft begins when every team saves retainers, saves a Pit Coach specialty, and votes."
       : "";
+  }
+  updateDraftVoteAlertBadges();
+}
+
+function renderRookieVeteranRelease() {
+  if (!elements.rookieReleasePanel) return;
+  const required = needsRookieVeteranRelease();
+  elements.rookieReleasePanel.hidden = !required;
+  if (!required) {
+    if (elements.rookieReleaseTeam) elements.rookieReleaseTeam.textContent = "";
+    if (elements.submitRookieRelease) {
+      elements.submitRookieRelease.disabled = true;
+      elements.submitRookieRelease.style.removeProperty("background");
+      elements.submitRookieRelease.style.removeProperty("color");
+    }
+    updateDraftVoteAlertBadges();
+    return;
+  }
+
+  const team = managedTeam();
+  const currentRookieSource = `rookie-${state.rookieDraft.season || state.raceCenter?.season || 1}`;
+  const releaseOptions = (team?.drivers || []).filter((racer) => racer.source !== currentRookieSource);
+  const selectedRacerId = elements.rookieReleaseRacer.value;
+  elements.rookieReleaseRacer.innerHTML = releaseOptions.length
+    ? [
+      `<option value="">Select veteran</option>`,
+      ...releaseOptions.map((racer) => (
+        `<option value="${racer.id}">${escapeHtml(racer.name)}</option>`
+      )),
+    ].join("")
+    : `<option value="">No eligible veteran drivers</option>`;
+  if (releaseOptions.some((racer) => racer.id === selectedRacerId)) {
+    elements.rookieReleaseRacer.value = selectedRacerId;
+  }
+  const ready = Boolean(elements.rookieReleaseRacer.value);
+  elements.submitRookieRelease.disabled = !ready;
+  const teamColor = state.brands[team.id]?.color || team.color;
+  if (ready) {
+    elements.submitRookieRelease.style.background = teamColor;
+    elements.submitRookieRelease.style.color = contrastColor(teamColor);
+  } else {
+    elements.submitRookieRelease.style.removeProperty("background");
+    elements.submitRookieRelease.style.removeProperty("color");
+  }
+  if (elements.rookieReleaseTeam && !elements.rookieReleaseTeam.textContent) {
+    elements.rookieReleaseTeam.textContent = releaseOptions.length
+      ? "Your team will DNF every race until this release is completed."
+      : "No eligible veteran drivers are available to release.";
   }
   updateDraftVoteAlertBadges();
 }
@@ -2883,8 +2938,8 @@ function renderRookieDraft() {
       : `Waiting for ${currentTeam.short} / ${currentTeam.name}.`
     : draft.status === "releases"
       ? state.rookieDraft.teamsAwaitingRelease?.includes(managedTeamId())
-        ? "Your team must release one racer."
-        : "Waiting for other teams to complete roster releases."
+        ? "Rookie draft picks are complete. Release a veteran in Admin."
+        : "Rookie draft picks are complete. Some teams still owe veteran releases."
     : draft.status === "voting"
       ? "Review the rookie class while the league votes to begin the draft."
       : "The rookie draft is complete.";
@@ -2904,8 +2959,6 @@ function renderRookieDraft() {
     : draftVoting
       ? `<p class="muted">The rookie class is ready. The draft begins once all six teams vote with the league code.</p>`
       : `<p class="muted">Race 10 is complete. The lowest-ranked team is on the clock.</p>`;
-  elements.rookieReleasePanel.hidden = draft.status !== "releases";
-  if (draft.status === "releases") renderRookieReleaseSelectors();
   updateDraftVoteAlertBadges();
   renderNewsTicker();
 }
@@ -3167,6 +3220,7 @@ function renderTransactions() {
   renderMoveSelectors();
   renderAdminRetention();
   renderPitCoachSelection();
+  renderRookieVeteranRelease();
   updateTradeAlertBadges();
   const actingTeamId = managedTeamId();
   const visibleOffers = state.transactions.offers.filter((offer) => (
@@ -3703,9 +3757,10 @@ function hasDraftSubnavVoteAlert() {
 }
 
 function currentAdminRequirementAlertKey() {
-  if (!needsRetentionSelection() && !needsPitCoachSelection()) return "";
+  if (!needsRetentionSelection() && !needsPitCoachSelection() && !needsRookieVeteranRelease()) return "";
   const season = state.draft?.initiation?.season || state.raceCenter?.season || 1;
-  return `opening-admin:${season}`;
+  const releaseSuffix = needsRookieVeteranRelease() ? ":rookie-release" : "";
+  return `opening-admin:${season}${releaseSuffix}`;
 }
 
 function hasOfficeAdminRequirementAlert() {
@@ -3731,7 +3786,8 @@ function updateOfficeAlertBadges() {
   const draftSubnavHasAlert = hasDraftSubnavVoteAlert();
   const retentionAlert = needsRetentionSelection();
   const coachAlert = needsPitCoachSelection();
-  const adminAlert = hasUnreadTradeOffers() || retentionAlert || coachAlert;
+  const rookieReleaseAlert = needsRookieVeteranRelease();
+  const adminAlert = hasUnreadTradeOffers() || retentionAlert || coachAlert || rookieReleaseAlert;
   const officeButton = document.querySelector('[data-section="office"]');
   const shouldPointToOffice = hasUnreadTradeOffers()
     || officeHasDraftAlert
@@ -3913,7 +3969,7 @@ function activateSection(sectionName, requestedView = null) {
     subnavShell.style.setProperty("--active-tab-width", `${tabRect.width}px`);
   }
   elements.subnav.innerHTML = tabs.map((tab) => `
-    <button class="subnav-link ${tab.view === viewName ? "active" : ""} ${tab.view === "moves" && (hasUnreadTradeOffers() || needsRetentionSelection() || needsPitCoachSelection()) ? "has-alert" : ""} ${tab.view === "draft" && hasDraftSubnavVoteAlert() ? "has-alert" : ""}" data-subview="${tab.view}">
+    <button class="subnav-link ${tab.view === viewName ? "active" : ""} ${tab.view === "moves" && (hasUnreadTradeOffers() || needsRetentionSelection() || needsPitCoachSelection() || needsRookieVeteranRelease()) ? "has-alert" : ""} ${tab.view === "draft" && hasDraftSubnavVoteAlert() ? "has-alert" : ""}" data-subview="${tab.view}">
       ${tab.label}
     </button>
   `).join("");
@@ -4508,9 +4564,14 @@ elements.rookieDraftPool.addEventListener("click", async (event) => {
   }
 });
 
+elements.rookieReleaseRacer?.addEventListener("change", () => {
+  if (elements.rookieReleaseTeam) elements.rookieReleaseTeam.textContent = "";
+  renderRookieVeteranRelease();
+});
+
 elements.submitRookieRelease.addEventListener("click", async () => {
   elements.submitRookieRelease.disabled = true;
-  elements.rookieDraftMessage.textContent = "Processing roster release...";
+  elements.rookieReleaseTeam.textContent = "Processing veteran release...";
   try {
     const response = await fetch("/api/rookie-draft/releases", {
       method: "POST",
@@ -4530,11 +4591,11 @@ elements.submitRookieRelease.addEventListener("click", async () => {
     renderRacerDirectories();
     renderTransactions();
     renderRaceControls();
-    elements.rookieDraftMessage.textContent = result.status === "complete"
-      ? "Roster releases complete. Race 11 may begin."
-      : "Racer released. Remaining teams must finalize their rosters.";
+    elements.rookieReleaseTeam.textContent = result.status === "complete"
+      ? "Roster releases complete."
+      : "Veteran released. Remaining teams must finalize their rosters.";
   } catch (error) {
-    elements.rookieDraftMessage.textContent = error.message;
+    elements.rookieReleaseTeam.textContent = error.message;
     elements.submitRookieRelease.disabled = false;
   }
 });
@@ -5295,6 +5356,7 @@ async function syncRookieDraft() {
     renderTeamProfile();
     renderRacerDirectories();
     renderLineupEditor();
+    renderTransactions();
   }
   renderRookieDraft();
   renderRaceControls();
