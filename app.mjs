@@ -472,6 +472,10 @@ function managedTeamName() {
   return managedTeam().name;
 }
 
+function isRacePageActive() {
+  return state.activeSection === "race" && state.activeViewBySection.race === "race";
+}
+
 async function submitManagerAuth(path, form) {
   const response = await fetch(path, {
     method: "POST",
@@ -3898,7 +3902,7 @@ async function refreshAfterStewardsAction(center = null) {
   renderRacerDirectories();
   renderInMemoriam();
   renderRaceControls();
-  if (state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
+  if (isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
     const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
     const activeRace = await response.json();
     if (response.ok) {
@@ -3912,11 +3916,11 @@ async function refreshAfterStewardsAction(center = null) {
       return;
     }
   }
-  await renderIdleRaceFeed();
+  if (!state.raceCenter.raceActive) await renderIdleRaceFeed();
 }
 
 async function resumeActiveRaceView() {
-  if (state.activeSection !== "race" || state.activeViewBySection.race !== "race") return;
+  if (!isRacePageActive()) return;
   if (!state.raceCenter.raceActive || !state.raceCenter.activeRaceId) return;
   if (state.running && state.timer && state.race?.id === state.raceCenter.activeRaceId) return;
 
@@ -5131,19 +5135,9 @@ async function initialize() {
     renderRaceControls();
     renderInitiationMartyrVote();
     renderDarkSacrificeChoice();
-    if (state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
-      const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
-      const activeRace = await response.json();
-      if (response.ok) {
-        state.activeLeagueRace = activeRace;
-        elements.speed.value = "1";
-        playRace(
-          activeRace,
-          false,
-          raceElapsedSinceStart(activeRace.startAt),
-        );
-      }
-    } else {
+    if (isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
+      void resumeActiveRaceView();
+    } else if (!state.raceCenter.raceActive) {
       await renderIdleRaceFeed();
     }
     showDarkSacrificeResult({ automatic: !isSeasonCeremonyPreview() });
@@ -5168,7 +5162,7 @@ async function syncRaceCenter() {
   const ceremonyIsNewlyAvailable = !ceremonyWasAvailable
     && state.raceCenter.seasonComplete
     && state.raceCenter.champions;
-  if (!state.running && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
+  if (!state.running && isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
     const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
     const activeRace = await response.json();
     if (response.ok) {
@@ -5197,7 +5191,7 @@ async function syncRaceCenter() {
     renderDarkSacrificeChoice();
     renderRaceControls();
     if (priorRelayLockReason !== nextRelayLockReason) renderLineupEditor();
-    await renderIdleRaceFeed();
+    if (!state.raceCenter.raceActive) await renderIdleRaceFeed();
     if (state.darkSacrifice.status === "resolved") showDarkSacrificeResult({ automatic: true });
     if (state.raceCenter.seasonComplete && state.raceCenter.champions) {
       showSeasonCeremony({ automatic: true });
