@@ -6593,6 +6593,31 @@ export function createLeagueStore(path = ":memory:") {
   function getRaceReview(raceId) {
     const race = publicRace(readRace.get(Number(raceId)));
     if (!race) throw new Error("Unknown race.");
+    const reviewEntries = race.entries.map((entry) => ({
+      id: entry.id,
+      teamId: entry.teamId,
+      teamName: entry.teamName,
+      teamShort: entry.teamShort,
+      color: entry.color,
+      carName: entry.carName,
+      stints: (entry.stints || []).map((stint) => ({
+        start: stint.start,
+        end: stint.end,
+        laps: stint.laps,
+        driver: {
+          id: stint.driver?.id,
+          name: stint.driver?.name,
+        },
+      })),
+    }));
+    const reviewEvents = race.events
+      .filter((event) => event.message)
+      .map((event) => ({
+        time: event.time,
+        type: event.type,
+        message: event.message,
+        tone: event.tone,
+      }));
     return {
       id: race.id,
       season: race.season,
@@ -6603,8 +6628,8 @@ export function createLeagueStore(path = ":memory:") {
       preRaceDuration: race.preRaceDuration,
       condition: race.condition,
       course: race.course,
-      entries: race.entries,
-      events: race.events.filter((event) => event.message),
+      entries: reviewEntries,
+      events: reviewEvents,
       finalStandings: race.finalStandings,
       createdAt: race.createdAt,
       startAt: race.startAt,
