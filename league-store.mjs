@@ -6590,6 +6590,28 @@ export function createLeagueStore(path = ":memory:") {
     return race;
   }
 
+  function getRaceReview(raceId) {
+    const race = publicRace(readRace.get(Number(raceId)));
+    if (!race) throw new Error("Unknown race.");
+    return {
+      id: race.id,
+      season: race.season,
+      week: race.week,
+      raceNumber: race.raceNumber,
+      courseName: race.courseName,
+      duration: race.duration,
+      preRaceDuration: race.preRaceDuration,
+      condition: race.condition,
+      course: race.course,
+      entries: race.entries,
+      events: race.events.filter((event) => event.message),
+      finalStandings: race.finalStandings,
+      createdAt: race.createdAt,
+      startAt: race.startAt,
+      recapText: race.recapText,
+    };
+  }
+
   function getSeasonHistory() {
     return readSeasonHistory.all().map((row) => ({
       season: row.season,
@@ -7587,6 +7609,7 @@ export function createLeagueStore(path = ":memory:") {
     getRacerDirectory,
     finishRace,
     finishActiveRaceNow,
+    getRaceReview,
     fastForwardToRace10,
     autoPickCurrentDraft,
     autoPickCurrentDraftPick,

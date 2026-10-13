@@ -4342,7 +4342,7 @@ elements.raceHistory.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    const response = await fetch(`/api/races/${button.dataset.reviewRace}`);
+    const response = await fetch(`/api/races/${button.dataset.reviewRace}/review`);
     const race = await response.json();
     if (!response.ok) throw new Error(race.error || "Could not load race review.");
     renderRaceReview(race, button);

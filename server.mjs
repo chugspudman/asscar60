@@ -461,6 +461,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const raceReviewMatch = requestedPath.match(/^\/api\/races\/(\d+)\/review$/);
+    if (request.method === "GET" && raceReviewMatch) {
+      sendJson(response, 200, store.getRaceReview(Number(raceReviewMatch[1])));
+      return;
+    }
+
     const raceMatch = requestedPath.match(/^\/api\/races\/(\d+)$/);
     if (request.method === "GET" && raceMatch) {
       sendJson(response, 200, store.getRace(Number(raceMatch[1])));
