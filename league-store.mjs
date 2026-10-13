@@ -3193,7 +3193,7 @@ export function createLeagueStore(path = ":memory:") {
     WHERE racer_id = ? AND season = ? AND race_id != ?
   `);
   const readLatestCompletedSeasonRace = database.prepare(`
-    SELECT id, season, week, race_number, course_name, entries_json, standings_json
+    SELECT id, season, week, race_number, course_name, entries_json, events_json, standings_json
     FROM races
     WHERE season = ?
       AND id != COALESCE((SELECT active_race_id FROM league_runtime WHERE id = 1), -1)
@@ -6067,7 +6067,7 @@ export function createLeagueStore(path = ":memory:") {
       raceNumber: row.race_number,
       courseName: row.course_name,
       entries: JSON.parse(row.entries_json),
-      events: [],
+      events: JSON.parse(row.events_json),
     };
     const entriesById = new Map((race.entries || []).map((entry) => [entry.id, entry]));
     const recentByRacer = new Map();
