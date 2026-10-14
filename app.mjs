@@ -1214,11 +1214,15 @@ async function renderIdleRaceFeed() {
     if (state.idleFeedKey === key) return;
     state.idleFeedKey = key;
     elements.feed.innerHTML = "";
-    const response = await fetch(`/api/races/${latest.id}`);
+    const response = await fetch(`/api/races/${latest.id}/review`);
     const race = await response.json();
     if (response.ok) {
       state.race = race;
-      race.events.filter((event) => event.message).forEach(addFeedItem);
+      elements.feed.innerHTML = race.events
+        .filter((event) => event.message)
+        .reverse()
+        .map(raceFeedItemMarkup)
+        .join("");
       elements.standings.innerHTML = standingsMarkup(race.finalStandings);
       elements.clock.textContent = formatRaceTime(race.duration);
       elements.leader.textContent = entryById(race.finalStandings[0].id).carName;
