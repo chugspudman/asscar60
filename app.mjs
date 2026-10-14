@@ -4055,7 +4055,8 @@ function showRulesPage() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-async function showMediaPage() {
+async function showMediaPage(options = {}) {
+  const skipRefresh = Boolean(options?.skipRefresh);
   closeAppMenu();
   writeNavigationState("media");
   state.mediaMenuNoticed = true;
@@ -4068,16 +4069,19 @@ async function showMediaPage() {
   elements.subnav.innerHTML = "";
   elements.raceStatusBanner.hidden = true;
   renderNewsTicker();
-  try {
-    await loadMediaEntries();
-  } catch {
-    // Keep the existing list visible if a refresh fails.
+  if (!skipRefresh) {
+    try {
+      await loadMediaEntries();
+    } catch {
+      // Keep the existing list visible if a refresh fails.
+    }
   }
   renderMediaPage();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-async function showMemoriamPage() {
+async function showMemoriamPage(options = {}) {
+  const skipRefresh = Boolean(options?.skipRefresh);
   closeAppMenu();
   writeNavigationState("memoriam");
   if (elements.rulesPage) elements.rulesPage.hidden = true;
@@ -4088,10 +4092,12 @@ async function showMemoriamPage() {
   elements.subnav.innerHTML = "";
   elements.raceStatusBanner.hidden = true;
   renderNewsTicker();
-  try {
-    await loadInMemoriam();
-  } catch {
-    // Keep the existing list visible if a refresh fails.
+  if (!skipRefresh) {
+    try {
+      await loadInMemoriam();
+    } catch {
+      // Keep the existing list visible if a refresh fails.
+    }
   }
   renderInMemoriam();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -5130,10 +5136,6 @@ async function initialize() {
       loadTransactions(),
       loadDevelopment(),
       loadRaceCenter(),
-      loadRacerDirectory(),
-      loadInMemoriam(),
-      loadSeasonEvents(),
-      loadMediaEntries(),
     ]);
   } catch (error) {
     elements.saveMessage.textContent = `${error.message} Using temporary defaults.`;
@@ -5152,26 +5154,44 @@ async function initialize() {
     renderBrand();
     renderRaceArchive();
     renderCourses();
-    renderRacerDirectories();
-    renderInMemoriam();
-    renderSeasonEvents();
-    renderMediaPage();
     const navigationMode = restoreNavigationState();
     activateSection(state.activeSection, state.activeViewBySection[state.activeSection]);
     renderRaceControls();
     renderInitiationMartyrVote();
     renderDarkSacrificeChoice();
     if (isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
-      await resumeActiveRaceView();
+      void resumeActiveRaceView();
     } else if (!state.raceCenter.raceActive) {
       await renderIdleRaceFeed();
     }
     showDarkSacrificeResult({ automatic: !isSeasonCeremonyPreview() });
     showSeasonCeremony({ automatic: !isSeasonCeremonyPreview() });
     if (navigationMode === "rules") showRulesPage();
-    if (navigationMode === "media") await showMediaPage();
-    if (navigationMode === "memoriam") await showMemoriamPage();
+    if (navigationMode === "media") await showMediaPage({ skipRefresh: true });
+    if (navigationMode === "memoriam") await showMemoriamPage({ skipRefresh: true });
   }
+}
+
+async function hydrateDeferredStartupData() {
+  await Promise.all([
+    loadRacerDirectory(),
+    loadInMemoriam(),
+    loadSeasonEvents(),
+    loadMediaEntries(),
+  ]);
+  renderTeamProfile();
+  renderLineupEditor();
+  renderLeague();
+  renderDraft();
+  renderRookieDraft();
+  renderTransactions();
+  renderRacerDirectories();
+  renderInMemoriam();
+  renderSeasonEvents();
+  renderMediaPage();
+  showSeasonEventsPopup();
+  updateTradeAlertBadges();
+  updateDraftVoteAlertBadges();
 }
 
 async function syncRaceCenter() {
@@ -5407,7 +5427,6 @@ async function startApp() {
     showGameShell();
     renderNewsTicker();
     stabilizeInitialLayout();
-    showSeasonEventsPopup();
     raceCenterInterval = setInterval(syncRaceCenter, 2_000);
     draftInterval = setInterval(syncDraft, 2_000);
     rookieDraftInterval = setInterval(syncRookieDraft, 2_000);
@@ -5416,6 +5435,9 @@ async function startApp() {
     transactionsInterval = setInterval(syncTransactions, 15_000);
     mediaInterval = setInterval(syncMediaEntries, 15_000);
     appStarted = true;
+    void hydrateDeferredStartupData().catch((error) => {
+      elements.saveMessage.textContent = error.message || "Some league data could not be loaded yet.";
+    });
   } catch (error) {
     appStarted = false;
     showAuthError(error.message || "Could not start the league.");
