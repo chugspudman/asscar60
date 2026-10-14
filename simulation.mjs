@@ -931,6 +931,8 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
   const pitCoachesByTeam = options.pitCoachesByTeam || {};
   const preRaceSpeedMadnessRacerIds = new Set(options.preRaceSpeedMadnessRacerIds || []);
   const forcedDnfTeamIds = new Set(options.forcedDnfTeamIds || []);
+  const forcedDnfEntryIds = new Set(options.forcedDnfEntryIds || []);
+  const forcedDnfMessages = options.forcedDnfMessages || {};
   const segmentCount = course.segments.length;
   const totalSegments = TOTAL_LAPS * segmentCount;
   const racers = entries.map((entry) => ({
@@ -1017,7 +1019,7 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     });
   };
   for (const entry of racers) {
-    if (!forcedDnfTeamIds.has(entry.teamId)) continue;
+    if (!forcedDnfTeamIds.has(entry.teamId) && !forcedDnfEntryIds.has(entry.id)) continue;
     entry.status = "dnf";
     entry.dnfTime = 0.01;
     entry.dnfProgress = 0;
@@ -1067,12 +1069,12 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     type: "grid-chaos",
     message: "The grid becomes a mess as drivers jockey for position!",
   }];
-  for (const entry of racers.filter((racer) => forcedDnfTeamIds.has(racer.teamId))) {
+  for (const entry of racers.filter((racer) => forcedDnfTeamIds.has(racer.teamId) || forcedDnfEntryIds.has(racer.id))) {
     events.push({
       time: 0.01,
       type: "dnf",
       entryId: entry.id,
-      message: `${entry.carName} is ruled a DNF because the team has not released a veteran after the rookie draft.`,
+      message: forcedDnfMessages[entry.id] || `${entry.carName} is ruled a DNF because the team has not released a veteran after the rookie draft.`,
       category: "event",
     });
   }

@@ -2013,6 +2013,11 @@ function renderLineupEditor() {
   }
   const raceLockReason = relayPlanRaceLockReason();
   if (raceLockReason) state.relayPlanEditing = false;
+  const savedCompuzoidLimit = selections.some((selection) => (
+    racerById(selection?.driverId)?.compuzoid
+    && Number(selection?.laps || 0) > 20
+  ));
+  if (savedCompuzoidLimit && !raceLockReason) state.relayPlanEditing = true;
   elements.lineupEditor.innerHTML = [0, 1].map((carIndex) => `
     <div class="car-lineup" data-car="${carIndex}">
       <div class="car-lineup-heading">
@@ -2074,15 +2079,20 @@ function formatSeasonEventText(value) {
 function updateStintRanges() {
   [0, 1].forEach((carIndex) => {
     let total = 0;
+    let compuzoidLimit = false;
     for (let stintIndex = 0; stintIndex < 3; stintIndex += 1) {
       const slot = carIndex * 3 + stintIndex;
       const input = elements.lineupEditor.querySelector(`[data-laps-slot="${slot}"]`);
+      const select = elements.lineupEditor.querySelector(`[data-driver-slot="${slot}"]`);
       const laps = Number(input.value) || 0;
       total += laps;
+      if (racerById(select?.value)?.compuzoid && laps > 20) {
+        compuzoidLimit = true;
+      }
     }
     const totalElement = elements.lineupEditor.querySelector(`[data-total="${carIndex}"]`);
-    totalElement.textContent = `${total} / 60 laps`;
-    totalElement.classList.toggle("invalid", total !== 60);
+    totalElement.textContent = compuzoidLimit ? "COMPUZOID LIMIT" : `${total} / 60 laps`;
+    totalElement.classList.toggle("invalid", total !== 60 || compuzoidLimit);
   });
   updateLineupEligibility();
 }
@@ -2097,7 +2107,6 @@ function currentLineupAssignments() {
 function lineupIneligibilityReason(assignments) {
   const raceLockReason = relayPlanRaceLockReason();
   if (raceLockReason) return raceLockReason;
-  if (!state.relayPlanEditing) return "";
   if (assignments.some((assignment) => assignment.laps < 5 || assignment.laps > 40)) {
     return "Every stint must be between 5 and 40 laps.";
   }
@@ -2107,6 +2116,7 @@ function lineupIneligibilityReason(assignments) {
   ))) {
     return "Compuzoids cannot race for longer than 20 laps.";
   }
+  if (!state.relayPlanEditing) return "";
   const totals = [0, 1].map((carIndex) => assignments
     .slice(carIndex * 3, carIndex * 3 + 3)
     .reduce((sum, assignment) => sum + assignment.laps, 0));

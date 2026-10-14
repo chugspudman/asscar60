@@ -7195,6 +7195,14 @@ export function createLeagueStore(path = ":memory:") {
       league.cars,
       Object.fromEntries(readBrands.all().map((brand) => [brand.team_id, brand])),
     );
+    const illegalCompuzoidEntries = baseEntries.filter((entry) => (
+      entry.stints.some((stint) => stint.driver?.compuzoid && (stint.end - stint.start + 1) > 20)
+    ));
+    const illegalCompuzoidEntryIds = illegalCompuzoidEntries.map((entry) => entry.id);
+    const illegalCompuzoidDnfMessages = Object.fromEntries(illegalCompuzoidEntries.map((entry) => [
+      entry.id,
+      `${entry.carName} is ruled a DNF because its relay plan violates the compuzoid stint limit.`,
+    ]));
     const activeEffects = activeSeasonEventEffects(season);
     const suspendedRacerIds = new Set(activeEffects
       .filter((effect) => ["suspension", "speed_madness_recovery"].includes(effect.type) && effect.racer_id)
@@ -7227,6 +7235,8 @@ export function createLeagueStore(path = ":memory:") {
       pitCoachesByTeam: pitCoachRaceContext(season),
       preRaceSpeedMadnessRacerIds: speedMadnessRacerIds,
       forcedDnfTeamIds: rookieReleaseDnfTeamIds,
+      forcedDnfEntryIds: illegalCompuzoidEntryIds,
+      forcedDnfMessages: illegalCompuzoidDnfMessages,
     });
     const pole = [...entries].sort((a, b) => a.startingGridPosition - b.startingGridPosition)[0];
     if (pole) {
