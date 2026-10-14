@@ -548,6 +548,28 @@ function renderRaceTitle(race = null) {
     : escapeHtml(courseName);
 }
 
+function renderActiveRaceLoadingState() {
+  if (!state.raceCenter.raceActive) return;
+  state.idleFeedKey = `active-loading:${state.raceCenter.activeRaceId || ""}`;
+  if (elements.raceTitle) {
+    elements.raceTitle.innerHTML = `Race in progress<span>Loading live feed</span>`;
+  }
+  elements.clock.textContent = "--:--";
+  elements.leader.textContent = "Loading";
+  elements.lap.textContent = "Live race";
+  elements.raceButton.disabled = true;
+  elements.raceButton.textContent = "League race in progress";
+  elements.feed.innerHTML = `
+    <article class="feed-item feature">
+      <time>LIVE</time>
+      <p>The race is in progress. Loading the live feed...</p>
+    </article>`;
+  elements.standings.innerHTML = "";
+  renderRacePodium([]);
+  renderRaceProgress([], "Loading live race");
+  renderRaceBanner();
+}
+
 function secondsUntilNextRace() {
   if (!state.raceCenter.nextRaceAt) return null;
   return (new Date(state.raceCenter.nextRaceAt).getTime() - currentTimeMs()) / 1000;
@@ -1569,6 +1591,12 @@ function renderRaceBanner() {
     }).format(new Date(activeRace.startAt));
     elements.raceBannerTitle.textContent = `Current Race: ${activeRace.courseName} / Week ${activeRace.week} / ${activeDay}`;
     elements.raceBannerCondition.textContent = `Conditions: ${activeRace.condition}`;
+    return;
+  }
+
+  if (state.raceCenter.raceActive) {
+    elements.raceBannerTitle.textContent = "Current Race: Loading live race";
+    elements.raceBannerCondition.textContent = "Race in progress.";
     return;
   }
 
@@ -3903,18 +3931,8 @@ async function refreshAfterStewardsAction(center = null) {
   renderInMemoriam();
   renderRaceControls();
   if (isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
-    const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
-    const activeRace = await response.json();
-    if (response.ok) {
-      state.activeLeagueRace = activeRace;
-      elements.speed.value = "1";
-      playRace(
-        activeRace,
-        false,
-        raceElapsedSinceStart(activeRace.startAt),
-      );
-      return;
-    }
+    await resumeActiveRaceView();
+    return;
   }
   if (!state.raceCenter.raceActive) await renderIdleRaceFeed();
 }
@@ -3923,6 +3941,7 @@ async function resumeActiveRaceView() {
   if (!isRacePageActive()) return;
   if (!state.raceCenter.raceActive || !state.raceCenter.activeRaceId) return;
   if (state.running && state.timer && state.race?.id === state.raceCenter.activeRaceId) return;
+  renderActiveRaceLoadingState();
 
   if (state.timer) {
     clearInterval(state.timer);
@@ -3934,7 +3953,14 @@ async function resumeActiveRaceView() {
   if (!activeRace || activeRace.id !== state.raceCenter.activeRaceId) {
     const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
     const result = await response.json();
-    if (!response.ok) return;
+    if (!response.ok) {
+      elements.feed.innerHTML = `
+        <article class="feed-item feature">
+          <time>LIVE</time>
+          <p>The race is in progress, but the live feed could not be loaded yet.</p>
+        </article>`;
+      return;
+    }
     activeRace = result;
     state.activeLeagueRace = activeRace;
   }
@@ -5136,7 +5162,7 @@ async function initialize() {
     renderInitiationMartyrVote();
     renderDarkSacrificeChoice();
     if (isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
-      void resumeActiveRaceView();
+      await resumeActiveRaceView();
     } else if (!state.raceCenter.raceActive) {
       await renderIdleRaceFeed();
     }
@@ -5162,19 +5188,10 @@ async function syncRaceCenter() {
   const ceremonyIsNewlyAvailable = !ceremonyWasAvailable
     && state.raceCenter.seasonComplete
     && state.raceCenter.champions;
+  if (!state.raceCenter.raceActive) state.activeLeagueRace = null;
   if (!state.running && isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
-    const response = await fetch(`/api/races/${state.raceCenter.activeRaceId}`);
-    const activeRace = await response.json();
-    if (response.ok) {
-      state.activeLeagueRace = activeRace;
-      elements.speed.value = "1";
-      playRace(
-        activeRace,
-        false,
-        raceElapsedSinceStart(activeRace.startAt),
-      );
-      renderLineupEditor();
-    }
+    await resumeActiveRaceView();
+    renderLineupEditor();
   } else if (!state.running) {
     if (darkSacrificeNewlyAvailable || darkSacrificeNewlyResolved || ceremonyIsNewlyAvailable) {
       await Promise.all([loadLeagueState(), loadRacerDirectory(), loadInMemoriam(), loadSeasonEvents()]);
