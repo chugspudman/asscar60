@@ -4383,19 +4383,21 @@ export function createLeagueStore(path = ":memory:") {
 
     const dinnerPlaces = ["Alinea", "a Denny's"];
     const dinnerMoods = ["gazing longingly into each other's eyes", "deep in conversation"];
-    for (const place of dinnerPlaces) {
-      const uniqueKey = `dinner:${place}`;
-      if (uniqueKeys.has(uniqueKey)) continue;
-      const otherTeam = randomItem(teams.filter((item) => item.id !== team.id), random);
-      const driver = bestTeamDriver(team.id, signed, mvdMap);
-      const mood = randomItem(dinnerMoods, random);
-      if (driver && otherTeam) addCandidate({
-        key: "dinner",
-        category: "flavor",
-        uniqueKey,
-        variableValues: [place, mood],
-        text: `${driver.name} was seen having dinner with ${teamBrandName(otherTeam.id)}'s manager at ${place}, ${mood}.`,
-      });
+    if (events.filter((event) => event.event_key === "dinner").length < 1) {
+      for (const place of dinnerPlaces) {
+        const uniqueKey = `dinner:${place}`;
+        if (uniqueKeys.has(uniqueKey)) continue;
+        const otherTeam = randomItem(teams.filter((item) => item.id !== team.id), random);
+        const driver = bestTeamDriver(team.id, signed, mvdMap);
+        const mood = randomItem(dinnerMoods, random);
+        if (driver && otherTeam) addCandidate({
+          key: "dinner",
+          category: "flavor",
+          uniqueKey,
+          variableValues: [place, mood],
+          text: `${driver.name} was seen having dinner with ${teamBrandName(otherTeam.id)}'s manager at ${place}, ${mood}.`,
+        });
+      }
     }
 
     if (events.filter((event) => event.event_key === "release").length < 2) {
@@ -4415,17 +4417,26 @@ export function createLeagueStore(path = ":memory:") {
       }
     }
 
-    for (const product of ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"]) {
-      const uniqueKey = `ad:${product}`;
-      if (uniqueKeys.has(uniqueKey)) continue;
-      const pick = randomSignedWithTeam();
-      if (pick) addCandidate({
-        key: "ad",
-        category: "flavor",
-        uniqueKey,
-        variableValues: [product],
-        text: `${pick.racer.name} of ${teamBrandName(pick.racer.team_id)} appeared in an ad for ${product}, saying "After a long day of going as fast as Velocitus will let me, nothing winds me down quite like ${product}!"`,
-      });
+    if (events.filter((event) => event.event_key === "ad").length < 2) {
+      const adIntros = [
+        "After a long day of going as fast as Velocitus will let me, nothing winds me down quite like",
+        "When I'm done ripping through my competition on the track, I like to come home and rip through some",
+      ];
+      for (const product of ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"]) {
+        if (uniqueKeys.has(`ad:${product}`) || usedVariableValues.has(`ad:${product}`) || usedVariableValues.has(`ad:product:${product}`)) continue;
+        for (const intro of adIntros) {
+          const uniqueKey = `ad:${product}:${intro}`;
+          if (uniqueKeys.has(uniqueKey) || usedVariableValues.has(`ad:intro:${intro}`)) continue;
+          const pick = randomSignedWithTeam();
+          if (pick) addCandidate({
+            key: "ad",
+            category: "flavor",
+            uniqueKey,
+            variableValues: [`product:${product}`, `intro:${intro}`],
+            text: `${pick.racer.name} of ${teamBrandName(pick.racer.team_id)} appeared in an ad for ${product}, saying "${intro} ${product}!"`,
+          });
+        }
+      }
     }
 
     if (events.filter((event) => event.event_key === "compuzoid").length < 3) {
@@ -4687,8 +4698,8 @@ export function createLeagueStore(path = ":memory:") {
         name: "Dinner Rumor",
         category: "flavor",
         template: "[Team A's best driver] was seen having dinner with [a different team]'s manager at [place], [mood].",
-        used: ["Alinea", "a Denny's"].filter((place) => uniqueKeys.has(`dinner:${place}`)).length,
-        max: 2,
+        used: usedCount("dinner"),
+        max: 1,
         variables: {
           place: ["Alinea", "a Denny's"],
           mood: ["gazing longingly into each other's eyes", "deep in conversation"],
@@ -4712,10 +4723,16 @@ export function createLeagueStore(path = ":memory:") {
         key: "ad",
         name: "Product Ad",
         category: "flavor",
-        template: "[random signed driver] of [team] appeared in an ad for [product], saying \"After a long day of going as fast as Velocitus will let me, nothing winds me down quite like [same product]!\"",
-        used: ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"].filter((product) => uniqueKeys.has(`ad:${product}`)).length,
-        max: 4,
-        variables: { product: ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"] },
+        template: "[random signed driver] of [team] appeared in an ad for [product], saying \"[slogan start] [same product]!\"",
+        used: usedCount("ad"),
+        max: 2,
+        variables: {
+          product: ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"],
+          "slogan start": [
+            "After a long day of going as fast as Velocitus will let me, nothing winds me down quite like",
+            "When I'm done ripping through my competition on the track, I like to come home and rip through some",
+          ],
+        },
         requirements: [signedRequirement],
       },
       {
