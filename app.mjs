@@ -2091,7 +2091,7 @@ function updateStintRanges() {
       }
     }
     const totalElement = elements.lineupEditor.querySelector(`[data-total="${carIndex}"]`);
-    totalElement.textContent = compuzoidLimit ? "COMPUZOID LIMIT" : `${total} / 60 laps`;
+    totalElement.textContent = `${total} / 60 laps`;
     totalElement.classList.toggle("invalid", total !== 60 || compuzoidLimit);
   });
   updateLineupEligibility();
@@ -2110,11 +2110,13 @@ function lineupIneligibilityReason(assignments) {
   if (assignments.some((assignment) => assignment.laps < 5 || assignment.laps > 40)) {
     return "Every stint must be between 5 and 40 laps.";
   }
-  if (assignments.some((assignment) => (
+  const compuzoidLimitAssignment = assignments.find((assignment) => (
     racerById(assignment.driverId)?.compuzoid
     && assignment.laps > 20
-  ))) {
-    return "Compuzoids cannot race for longer than 20 laps.";
+  ));
+  if (compuzoidLimitAssignment) {
+    const driver = racerById(compuzoidLimitAssignment.driverId);
+    return `${driver?.name || "That driver"} is a compuzoid. Their maximum stint length is 20 laps.`;
   }
   if (!state.relayPlanEditing) return "";
   const totals = [0, 1].map((carIndex) => assignments
