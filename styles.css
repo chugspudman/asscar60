@@ -661,19 +661,6 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 }
 .rookie-draft-initiation h3 { margin: 6px 0 8px; font-size: 26px; letter-spacing: -.04em; }
 .rookie-draft-status { margin: 18px 0; }
-.rookie-release-panel {
-  position: fixed; inset: 50% auto auto 50%; z-index: 80;
-  width: min(560px, calc(100% - 28px)); max-width: 720px;
-  margin: 0; padding: 24px; transform: translate(-50%, -50%);
-  border: 1px solid var(--acid); background: #0d1311; box-shadow: 12px 12px 0 rgba(0,0,0,.38);
-}
-.rookie-release-panel::before {
-  content: ""; position: fixed; inset: -100vh; z-index: -1;
-  background: rgba(0,0,0,.72); backdrop-filter: blur(4px);
-}
-.rookie-release-panel .move-field { margin-top: 12px; }
-.rookie-release-panel .primary-button { margin-top: 14px; }
-
 .moves-toolbar { display: grid; grid-template-columns: 1fr minmax(220px, .7fr); gap: 24px; align-items: end; padding: 20px 24px; margin-bottom: 18px; }
 .moves-toolbar #moves-team { display: block; color: var(--text); font-size: 24px; line-height: 1.1; }
 .moves-toolbar .muted, .moves-toolbar .save-message { margin: 0; }
@@ -814,6 +801,16 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .development-record .team-code { font: 700 11px "DM Mono", monospace; }
 .stewards-panel { padding: 24px; max-width: 860px; }
 .stewards-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.stewards-event-panel { margin-top: 18px; padding: 24px; }
+.season-event-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.season-event-status-grid h3 {
+  margin: 0 0 10px; color: var(--teal);
+  font: 700 11px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .06em;
+}
+.season-event-status-row { padding: 12px; border: 1px solid var(--line); background: var(--tile); margin-bottom: 10px; }
+.season-event-status-row strong { display: block; margin-bottom: 6px; font-size: 13px; }
+.season-event-status-row p { margin: 0; font-size: 12px; line-height: 1.45; }
+.season-event-status-row ul { margin: 8px 0 0 16px; padding: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .danger-button { border-color: var(--danger); color: var(--danger); }
 .danger-button:hover { background: var(--danger); color: #090d0c; }
 .development-record p { margin: 0; font-size: 12px; }

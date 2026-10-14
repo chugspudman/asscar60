@@ -4558,6 +4558,119 @@ export function createLeagueStore(path = ":memory:") {
     return candidates;
   }
 
+  function getSeasonEventDrawStatus(season = getActiveSeason()) {
+    const signed = readSignedRacers.all();
+    const racesRun = countSeasonRaces.get(season).count;
+    const events = readSeasonEventsChronological.all(season);
+    const eventKeys = new Set(events.map((event) => event.event_key));
+    const uniqueKeys = new Set(events.map((event) => event.unique_key).filter(Boolean));
+    const usedVariableValues = new Set();
+    for (const event of events) {
+      const payload = event.payload_json ? JSON.parse(event.payload_json) : {};
+      for (const value of payload.variableValues || []) {
+        usedVariableValues.add(`${event.event_key}:${value}`);
+      }
+    }
+    const asscastCount = events.filter((event) => event.text.includes("ASSCAST with Mav McCool")).length;
+    const seriesStarted = eventKeys.has("series-1-1");
+    const nextSeriesIndex = [1, 2, 3, 4, 5].find((index) => !eventKeys.has(`series-1-${index}`));
+    const eligible = eligibleSeasonEventCandidates(
+      season,
+      seededRandom(hashText(`season-event-status:${season}:${events.length}:${racesRun}`)),
+    ).map((candidate) => ({
+      key: candidate.key,
+      category: candidate.category,
+      text: candidate.text,
+      uniqueKey: candidate.uniqueKey || null,
+    }));
+    const usedCount = (key) => events.filter((event) => event.event_key === key).length;
+    const usedUnique = (keys) => keys.filter((key) => uniqueKeys.has(key)).length;
+    const hasSigned = signed.length > 0;
+    const nonCompuzoidCount = signed.filter((racer) => !racer.compuzoid).length;
+    const suspensionEligibleCount = signed.filter((racer) => (
+      readCompletedRaceLaps.all().filter((lap) => lap.racer_id === racer.id && lap.season === season).length >= 20
+    )).length;
+    const bodyEligibleTeams = teams.filter((team) => (
+      signed.filter((racer) => racer.team_id === team.id).length >= 4
+    )).length;
+    const locked = [];
+    const exhausted = [];
+    const addLocked = (key, name, conditions) => locked.push({ key, name, conditions });
+    const addExhausted = (key, name, conditions) => exhausted.push({ key, name, conditions });
+
+    if (seriesStarted) {
+      addExhausted("asscast", "ASSCAST flavor events", [
+        "The Mav McCool series has started, so no more ASSCAST events can occur this season.",
+      ]);
+    } else if (usedUnique(["asscast-top-1", "asscast-top-2", "asscast-least", "asscast-short-stint", "asscast-refusal"]) >= 5) {
+      addExhausted("asscast", "ASSCAST flavor events", ["All one-time ASSCAST events have already occurred this season."]);
+    }
+
+    if (!nextSeriesIndex) {
+      addExhausted("series-1", "Mav McCool series", ["All five Mav McCool series events have already occurred this season."]);
+    } else if (nextSeriesIndex === 1 && asscastCount < 2) {
+      addLocked("series-1", "Mav McCool series", [
+        "At least two ASSCAST events must occur first.",
+        `Current ASSCAST count: ${asscastCount}.`,
+      ]);
+    }
+
+    if (usedCount("release") >= 2) {
+      addExhausted("release", "Driver release flavor event", ["The release event is limited to 2 occurrences per season."]);
+    }
+
+    if (usedUnique(["dinner:Alinea", "dinner:a Denny's"]) >= 2) {
+      addExhausted("dinner", "Dinner rumor event", ["Both dinner locations have already been used this season."]);
+    }
+
+    if (usedUnique(["ad:Coca-Cola", "ad:fourLOKO", "ad:Birkenstocks", "ad:Cialis"]) >= 4) {
+      addExhausted("ad", "Product ad event", ["All product ad variants have already been used this season."]);
+    }
+
+    if (usedCount("compuzoid") >= 3) {
+      addExhausted("compuzoid", "Compuzoid reveal event", ["The compuzoid event is limited to 3 occurrences per season."]);
+    } else if (!nonCompuzoidCount) {
+      addLocked("compuzoid", "Compuzoid reveal event", ["There must be at least one signed driver who is not already a compuzoid."]);
+    }
+
+    if (usedUnique(["yips:contemplates nothingness", "yips:shows up with a hangover", "yips:has a falling out with their mother"]) >= 3) {
+      addExhausted("yips", "Yips qualifier event", ["All three yips causes have already been used this season."]);
+    }
+
+    if (!signed.some((racer) => !racer.speed_mark)) {
+      addLocked("mark-granted", "Mark of The Speed God event", ["There must be at least one signed driver without the Mark of The Speed God."]);
+    }
+
+    if (!suspensionEligibleCount) {
+      addLocked("suspension", "Decelerationist suspension event", [
+        "At least one signed driver must have raced 20 or more laps this season.",
+      ]);
+    }
+
+    if (!hasSigned) {
+      addLocked("speed-madness-next", "Speed Madness warning event", ["There must be at least one signed driver."]);
+    }
+
+    if (uniqueKeys.has("body-envy")) {
+      addExhausted("body-envy", "Simultaneous Body Envy", ["This unique event has already occurred this season."]);
+    } else {
+      const conditions = [];
+      if (racesRun < 10) conditions.push(`Race 10 must be completed first. Current completed races: ${racesRun}.`);
+      if (racesRun >= SEASON_RACES) conditions.push("This event must occur before the season is complete.");
+      if (!bodyEligibleTeams) conditions.push("At least one team must have 4 or more signed drivers.");
+      if (conditions.length) addLocked("body-envy", "Simultaneous Body Envy", conditions);
+    }
+
+    return {
+      season,
+      racesRun,
+      occurredCount: events.length,
+      eligible,
+      locked,
+      exhausted,
+    };
+  }
+
   function createSeasonEventForDate(season, dateKey) {
     const rollAt = seasonEventRollAtForKey(dateKey).toISOString();
     if (readSeasonEventRoll.get(season, dateKey)) return null;
@@ -7631,6 +7744,7 @@ export function createLeagueStore(path = ":memory:") {
     getRaceCenter,
     getSeasonHistory,
     getSeasonEvents,
+    getSeasonEventDrawStatus,
     getRacerDirectory,
     finishRace,
     finishActiveRaceNow,

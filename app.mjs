@@ -133,6 +133,7 @@ const state = {
   inMemoriam: [],
   seasonEvents: [],
   unreadSeasonEventIds: [],
+  seasonEventDrawStatus: null,
   development: {
     week: 1,
     choicesOpen: false,
@@ -283,6 +284,8 @@ const elements = {
   developmentHistory: document.querySelector("#development-history"),
   stewardsPanel: document.querySelector("#stewards-view"),
   stewardsMessage: document.querySelector("#stewards-message"),
+  seasonEventDrawStatus: document.querySelector("#season-event-draw-status"),
+  refreshSeasonEventStatus: document.querySelector("#refresh-season-event-status"),
   stewardsResetDialog: document.querySelector("#stewards-reset-dialog"),
   cancelStewardsReset: document.querySelector("#cancel-stewards-reset"),
   confirmStewardsReset: document.querySelector("#confirm-stewards-reset"),
@@ -2455,6 +2458,52 @@ function renderSeasonEvents() {
     : `<p class="muted">No Season Events have been recorded for this season yet.</p>`;
 }
 
+function eventStatusRows(items = [], emptyText) {
+  return items.length
+    ? items.map((item) => `
+      <article class="season-event-status-row">
+        <strong>${escapeHtml(item.name || item.key || "Season event")}</strong>
+        ${item.text ? `<p>${formatSeasonEventText(item.text)}</p>` : ""}
+        ${item.conditions?.length ? `
+          <ul>
+            ${item.conditions.map((condition) => `<li>${escapeHtml(condition)}</li>`).join("")}
+          </ul>
+        ` : ""}
+      </article>
+    `).join("")
+    : `<p class="muted">${escapeHtml(emptyText)}</p>`;
+}
+
+function renderSeasonEventDrawStatus() {
+  if (!elements.seasonEventDrawStatus) return;
+  const status = state.seasonEventDrawStatus;
+  if (!isStewardManager()) {
+    elements.seasonEventDrawStatus.innerHTML = `<p class="muted">Only devman can inspect the season event draw pool.</p>`;
+    return;
+  }
+  if (!status) {
+    elements.seasonEventDrawStatus.innerHTML = `<p class="muted">Refresh to inspect the current season event draw pool.</p>`;
+    return;
+  }
+  elements.seasonEventDrawStatus.innerHTML = `
+    <p class="muted">Season ${status.season} / ${status.occurredCount} events occurred / ${status.racesRun} races completed.</p>
+    <div class="season-event-status-grid">
+      <section>
+        <h3>Eligible Right Now</h3>
+        ${eventStatusRows(status.eligible || [], "No season events are currently eligible.")}
+      </section>
+      <section>
+        <h3>Locked Until Conditions Are Met</h3>
+        ${eventStatusRows(status.locked || [], "No locked season events.")}
+      </section>
+      <section>
+        <h3>Exhausted This Season</h3>
+        ${eventStatusRows(status.exhausted || [], "No season events have been exhausted yet.")}
+      </section>
+    </div>
+  `;
+}
+
 function blockingDialogOpen() {
   return [...document.querySelectorAll("dialog")].some((dialog) => (
     dialog.open && dialog !== elements.seasonEventsDialog
@@ -3928,6 +3977,13 @@ async function loadSeasonEvents() {
   state.unreadSeasonEventIds = result.unreadEventIds || [];
 }
 
+async function loadSeasonEventDrawStatus() {
+  if (!isStewardManager()) return;
+  const response = await fetch("/api/stewards/season-events/status");
+  if (!response.ok) throw new Error("Could not load season event draw status.");
+  state.seasonEventDrawStatus = await response.json();
+}
+
 async function loadMediaEntries() {
   const previousUnread = new Set(state.unreadMediaEntryIds || []);
   const response = await fetch("/api/media");
@@ -3970,6 +4026,7 @@ async function refreshAfterStewardsAction(center = null) {
     loadRaceCenter(),
     loadRacerDirectory(),
     loadInMemoriam(),
+    loadSeasonEventDrawStatus(),
   ]);
   renderInitialStandings();
   renderTeamProfile();
@@ -3984,6 +4041,7 @@ async function refreshAfterStewardsAction(center = null) {
   renderRaceArchive();
   renderRacerDirectories();
   renderInMemoriam();
+  renderSeasonEventDrawStatus();
   renderRaceControls();
   if (isRacePageActive() && state.raceCenter.raceActive && state.raceCenter.activeRaceId) {
     await resumeActiveRaceView();
@@ -4071,6 +4129,15 @@ function activateSection(sectionName, requestedView = null) {
     void loadSeasonEvents()
       .then(renderSeasonEvents)
       .catch(() => {});
+  }
+  if (sectionName === "office" && viewName === "stewards") {
+    void loadSeasonEventDrawStatus()
+      .then(renderSeasonEventDrawStatus)
+      .catch((error) => {
+        if (elements.seasonEventDrawStatus) {
+          elements.seasonEventDrawStatus.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+        }
+      });
   }
   writeNavigationState("section");
   renderNewsTicker();
@@ -5172,6 +5239,20 @@ elements.stewardsPanel.addEventListener("click", async (event) => {
   await runStewardsAction(action, button);
 });
 
+elements.refreshSeasonEventStatus?.addEventListener("click", async () => {
+  elements.refreshSeasonEventStatus.disabled = true;
+  try {
+    await loadSeasonEventDrawStatus();
+    renderSeasonEventDrawStatus();
+  } catch (error) {
+    if (elements.seasonEventDrawStatus) {
+      elements.seasonEventDrawStatus.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+    }
+  } finally {
+    elements.refreshSeasonEventStatus.disabled = false;
+  }
+});
+
 elements.cancelStewardsReset.addEventListener("click", () => elements.stewardsResetDialog.close());
 elements.confirmStewardsReset.addEventListener("click", async () => {
   elements.stewardsResetDialog.close();
@@ -5232,6 +5313,7 @@ async function hydrateDeferredStartupData() {
     loadRacerDirectory(),
     loadInMemoriam(),
     loadSeasonEvents(),
+    loadSeasonEventDrawStatus(),
     loadMediaEntries(),
   ]);
   renderTeamProfile();
@@ -5243,6 +5325,7 @@ async function hydrateDeferredStartupData() {
   renderRacerDirectories();
   renderInMemoriam();
   renderSeasonEvents();
+  renderSeasonEventDrawStatus();
   renderMediaPage();
   showSeasonEventsPopup();
   updateTradeAlertBadges();

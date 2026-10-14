@@ -329,6 +329,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && requestedPath === "/api/stewards/season-events/status") {
+      requireStewards(request);
+      sendJson(response, 200, store.getSeasonEventDrawStatus(store.getActiveSeason()));
+      return;
+    }
+
     if (request.method === "POST" && requestedPath === "/api/season-events/seen") {
       const manager = requireLoggedIn(request);
       const body = await readJson(request);

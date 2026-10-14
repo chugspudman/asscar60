@@ -764,6 +764,15 @@
         </div>
         <p id="stewards-message" class="save-message" role="status"></p>
       </section>
+      <section class="panel stewards-event-panel">
+        <div class="section-heading">
+          <div><span class="eyebrow">Season event draw pool</span><h2>Remaining events</h2></div>
+          <button class="secondary-button" id="refresh-season-event-status" type="button">Refresh list</button>
+        </div>
+        <div id="season-event-draw-status" class="season-event-draw-status">
+          <p class="muted">Only visible to devman. Shows which season events are eligible right now and which ones are waiting on conditions.</p>
+        </div>
+      </section>
     </section>
   </main>
 
@@ -908,6 +917,6 @@
       </div>
     </form>
   </dialog>
-  <script type="module" src="/app.mjs?v=max-stat-cap-icon-20261013"></script>
+  <script type="module" src="/app.mjs?v=season-event-status-20261013"></script>
 </body>
 </html>
