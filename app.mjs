@@ -2607,12 +2607,16 @@ function statTilesMarkup(racer) {
   ];
   return `
     <div class="ratings" aria-label="${escapeAttribute(racer.name)} ratings">
-      ${stats.map(([abbreviation, value, label]) => `
-        <span class="rating ${abbreviation === "POT" ? "potential" : ""} ${racer.cappedStats?.includes(label.toLocaleLowerCase()) ? "capped" : ""}" title="${label}${racer.cappedStats?.includes(label.toLocaleLowerCase()) ? " (discovered cap)" : ""}">
+      ${stats.map(([abbreviation, value, label]) => {
+        const discoveredCap = racer.cappedStats?.includes(label.toLocaleLowerCase());
+        const naturalMaximum = abbreviation !== "POT" && Number(value) >= 10;
+        return `
+        <span class="rating ${abbreviation === "POT" ? "potential" : ""} ${discoveredCap || naturalMaximum ? "capped" : ""}" title="${label}${discoveredCap ? " (discovered cap)" : naturalMaximum ? " (maximum 10)" : ""}">
           <span class="rating-label">${abbreviation}</span>
           <strong class="rating-value">${value}</strong>
         </span>
-      `).join("")}
+      `;
+      }).join("")}
     </div>`;
 }
 
