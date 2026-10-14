@@ -2458,19 +2458,47 @@ function renderSeasonEvents() {
     : `<p class="muted">No Season Events have been recorded for this season yet.</p>`;
 }
 
-function eventStatusRows(items = [], emptyText) {
+function eventStatusRows(items = [], emptyText, { showRequirements = false } = {}) {
   return items.length
-    ? items.map((item) => `
+    ? items.map((item) => {
+      const variableEntries = Object.entries(item.variables || {});
+      const hasUsageLimit = Number.isFinite(item.max);
+      const templateText = item.template || item.text || "";
+      const requirements = item.requirements?.length
+        ? item.requirements
+        : (item.conditions || []).map((condition) => ({ text: condition, met: false }));
+      return `
       <article class="season-event-status-row">
-        <strong>${escapeHtml(item.name || item.key || "Season event")}</strong>
-        ${item.text ? `<p>${formatSeasonEventText(item.text)}</p>` : ""}
-        ${item.conditions?.length ? `
-          <ul>
-            ${item.conditions.map((condition) => `<li>${escapeHtml(condition)}</li>`).join("")}
+        ${hasUsageLimit ? `<span class="season-event-usage">${escapeHtml(`${item.used || 0}/${item.max}`)}</span>` : ""}
+        <div class="season-event-status-heading">
+          <strong>${escapeHtml(item.name || item.key || "Season event")}</strong>
+        </div>
+        ${item.category ? `<small>${escapeHtml(item.category)}</small>` : ""}
+        <p class="season-event-template">${templateText ? formatSeasonEventText(templateText) : `<span class="muted">No event template is available.</span>`}</p>
+        ${variableEntries.length ? `
+          <dl class="season-event-variables">
+            ${variableEntries.map(([label, values]) => `
+              <div>
+                <dt>${escapeHtml(label)}</dt>
+                <dd>${escapeHtml(Array.isArray(values) ? values.join(" / ") : String(values))}</dd>
+              </div>
+            `).join("")}
+          </dl>
+        ` : ""}
+        ${showRequirements && requirements.length ? `
+          <div class="season-event-requirements-title">Requirements</div>
+          <ul class="season-event-requirements">
+            ${requirements.map((requirement) => `
+              <li class="${requirement.met ? "met" : "unmet"}">
+                <span class="requirement-check">${requirement.met ? "✓" : ""}</span>
+                <span>${escapeHtml(requirement.text)}</span>
+              </li>
+            `).join("")}
           </ul>
         ` : ""}
       </article>
-    `).join("")
+    `;
+    }).join("")
     : `<p class="muted">${escapeHtml(emptyText)}</p>`;
 }
 
@@ -2494,7 +2522,7 @@ function renderSeasonEventDrawStatus() {
       </section>
       <section>
         <h3>Locked Until Conditions Are Met</h3>
-        ${eventStatusRows(status.locked || [], "No locked season events.")}
+        ${eventStatusRows(status.locked || [], "No locked season events.", { showRequirements: true })}
       </section>
       <section>
         <h3>Exhausted This Season</h3>

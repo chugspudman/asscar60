@@ -807,10 +807,45 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
   margin: 0 0 10px; color: var(--teal);
   font: 700 11px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .06em;
 }
-.season-event-status-row { padding: 12px; border: 1px solid var(--line); background: var(--tile); margin-bottom: 10px; }
-.season-event-status-row strong { display: block; margin-bottom: 6px; font-size: 13px; }
+.season-event-status-row {
+  position: relative; padding: 14px 12px 12px; border: 1px solid var(--line);
+  background: var(--tile); margin-bottom: 10px;
+}
+.season-event-status-row:has(.season-event-usage) { padding-top: 28px; }
+.season-event-status-heading { display: block; margin-bottom: 4px; padding-right: 34px; }
+.season-event-status-row strong { display: block; font-size: 13px; }
+.season-event-status-row small {
+  display: block; margin-bottom: 8px; color: var(--teal);
+  font: 700 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .06em;
+}
 .season-event-status-row p { margin: 0; font-size: 12px; line-height: 1.45; }
-.season-event-status-row ul { margin: 8px 0 0 16px; padding: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.season-event-template { color: var(--ink); }
+.season-event-usage {
+  position: absolute; top: 8px; right: 8px; padding: 3px 6px; border: 1px solid var(--line); color: var(--acid);
+  background: var(--panel);
+  font: 700 10px "DM Mono", monospace;
+}
+.season-event-variables {
+  display: grid; gap: 6px; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line);
+}
+.season-event-variables div { display: grid; grid-template-columns: 82px 1fr; gap: 8px; align-items: start; }
+.season-event-variables dt {
+  color: var(--teal); font: 700 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .04em;
+}
+.season-event-variables dd { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.season-event-requirements-title {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+  color: var(--teal); font: 700 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .06em;
+}
+.season-event-requirements { margin: 6px 0 0; padding: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.season-event-requirements li {
+  display: grid; grid-template-columns: 16px 1fr; gap: 6px; align-items: start; margin-top: 6px; list-style: none;
+}
+.season-event-requirements .met { color: var(--ink); }
+.season-event-requirements .met .requirement-check { color: var(--acid); font-weight: 900; }
+.season-event-requirements .unmet .requirement-check {
+  width: 8px; height: 8px; margin-top: 4px; border: 1px solid var(--line);
+}
 .danger-button { border-color: var(--danger); color: var(--danger); }
 .danger-button:hover { background: var(--danger); color: #090d0c; }
 .development-record p { margin: 0; font-size: 12px; }
