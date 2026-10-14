@@ -2310,6 +2310,7 @@ function racerDirectoryCard(racer, { showAffiliation = true } = {}) {
     laps: 0,
     wins: 0,
     podiums: 0,
+    poles: 0,
     bestFinish: null,
     mvds: 0,
   };
@@ -2337,7 +2338,7 @@ function racerDirectoryCard(racer, { showAffiliation = true } = {}) {
         <div class="career-stats">
           <span class="card-label">Career statistics</span>
           <div class="career-grid">
-            <div><strong>${career.races}</strong><span>Races</span></div>
+            <div><strong>${career.poles || 0}</strong><span>Pole Positions</span></div>
             <div><strong>${career.laps}</strong><span>Scheduled laps</span></div>
             <div><strong>${career.wins}</strong><span>Wins</span></div>
             <div><strong>${career.podiums}</strong><span>Podiums</span></div>

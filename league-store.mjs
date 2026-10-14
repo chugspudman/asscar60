@@ -6449,6 +6449,7 @@ export function createLeagueStore(path = ":memory:") {
       const positionByEntry = new Map(
         standings.map((standing) => [standing.id, standing.position]),
       );
+      const poleEntryId = entries.find((entry) => entry.startingGridPosition === 1)?.id || null;
       const raceStats = new Map();
       for (const entry of entries) {
         const position = positionByEntry.get(entry.id);
@@ -6460,11 +6461,13 @@ export function createLeagueStore(path = ":memory:") {
             bestFinish: null,
             won: false,
             podium: false,
+            pole: false,
           };
           stats.laps += stint.end - stint.start + 1;
           stats.bestFinish = Math.min(stats.bestFinish ?? Infinity, position);
           stats.won ||= position === 1;
           stats.podium ||= position <= 3;
+          stats.pole ||= entry.id === poleEntryId;
           raceStats.set(racerId, stats);
         }
       }
@@ -6474,6 +6477,7 @@ export function createLeagueStore(path = ":memory:") {
           laps: 0,
           wins: 0,
           podiums: 0,
+          poles: 0,
           bestFinish: null,
           mvds: 0,
         };
@@ -6481,6 +6485,7 @@ export function createLeagueStore(path = ":memory:") {
         career.laps += raceStatsForRacer.laps;
         career.wins += Number(raceStatsForRacer.won);
         career.podiums += Number(raceStatsForRacer.podium);
+        career.poles += Number(raceStatsForRacer.pole);
         career.bestFinish = Math.min(
           career.bestFinish ?? Infinity,
           raceStatsForRacer.bestFinish,
@@ -6499,6 +6504,7 @@ export function createLeagueStore(path = ":memory:") {
         laps: 0,
         wins: 0,
         podiums: 0,
+        poles: 0,
         bestFinish: null,
         mvds: mvdWinsByRacer.get(racer.id) || 0,
       },
