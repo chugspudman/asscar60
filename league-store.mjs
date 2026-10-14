@@ -4564,27 +4564,9 @@ export function createLeagueStore(path = ":memory:") {
     const events = readSeasonEventsChronological.all(season);
     const eventKeys = new Set(events.map((event) => event.event_key));
     const uniqueKeys = new Set(events.map((event) => event.unique_key).filter(Boolean));
-    const usedVariableValues = new Set();
-    for (const event of events) {
-      const payload = event.payload_json ? JSON.parse(event.payload_json) : {};
-      for (const value of payload.variableValues || []) {
-        usedVariableValues.add(`${event.event_key}:${value}`);
-      }
-    }
     const asscastCount = events.filter((event) => event.text.includes("ASSCAST with Mav McCool")).length;
     const seriesStarted = eventKeys.has("series-1-1");
-    const nextSeriesIndex = [1, 2, 3, 4, 5].find((index) => !eventKeys.has(`series-1-${index}`));
-    const eligible = eligibleSeasonEventCandidates(
-      season,
-      seededRandom(hashText(`season-event-status:${season}:${events.length}:${racesRun}`)),
-    ).map((candidate) => ({
-      key: candidate.key,
-      category: candidate.category,
-      text: candidate.text,
-      uniqueKey: candidate.uniqueKey || null,
-    }));
     const usedCount = (key) => events.filter((event) => event.event_key === key).length;
-    const usedUnique = (keys) => keys.filter((key) => uniqueKeys.has(key)).length;
     const hasSigned = signed.length > 0;
     const nonCompuzoidCount = signed.filter((racer) => !racer.compuzoid).length;
     const suspensionEligibleCount = signed.filter((racer) => (
@@ -4593,81 +4575,225 @@ export function createLeagueStore(path = ":memory:") {
     const bodyEligibleTeams = teams.filter((team) => (
       signed.filter((racer) => racer.team_id === team.id).length >= 4
     )).length;
-    const locked = [];
-    const exhausted = [];
-    const addLocked = (key, name, conditions) => locked.push({ key, name, conditions });
-    const addExhausted = (key, name, conditions) => exhausted.push({ key, name, conditions });
-
-    if (seriesStarted) {
-      addExhausted("asscast", "ASSCAST flavor events", [
-        "The Mav McCool series has started, so no more ASSCAST events can occur this season.",
-      ]);
-    } else if (usedUnique(["asscast-top-1", "asscast-top-2", "asscast-least", "asscast-short-stint", "asscast-refusal"]) >= 5) {
-      addExhausted("asscast", "ASSCAST flavor events", ["All one-time ASSCAST events have already occurred this season."]);
-    }
-
-    if (!nextSeriesIndex) {
-      addExhausted("series-1", "Mav McCool series", ["All five Mav McCool series events have already occurred this season."]);
-    } else if (nextSeriesIndex === 1 && asscastCount < 2) {
-      addLocked("series-1", "Mav McCool series", [
-        "At least two ASSCAST events must occur first.",
-        `Current ASSCAST count: ${asscastCount}.`,
-      ]);
-    }
-
-    if (usedCount("release") >= 2) {
-      addExhausted("release", "Driver release flavor event", ["The release event is limited to 2 occurrences per season."]);
-    }
-
-    if (usedUnique(["dinner:Alinea", "dinner:a Denny's"]) >= 2) {
-      addExhausted("dinner", "Dinner rumor event", ["Both dinner locations have already been used this season."]);
-    }
-
-    if (usedUnique(["ad:Coca-Cola", "ad:fourLOKO", "ad:Birkenstocks", "ad:Cialis"]) >= 4) {
-      addExhausted("ad", "Product ad event", ["All product ad variants have already been used this season."]);
-    }
-
-    if (usedCount("compuzoid") >= 3) {
-      addExhausted("compuzoid", "Compuzoid reveal event", ["The compuzoid event is limited to 3 occurrences per season."]);
-    } else if (!nonCompuzoidCount) {
-      addLocked("compuzoid", "Compuzoid reveal event", ["There must be at least one signed driver who is not already a compuzoid."]);
-    }
-
-    if (usedUnique(["yips:contemplates nothingness", "yips:shows up with a hangover", "yips:has a falling out with their mother"]) >= 3) {
-      addExhausted("yips", "Yips qualifier event", ["All three yips causes have already been used this season."]);
-    }
-
-    if (!signed.some((racer) => !racer.speed_mark)) {
-      addLocked("mark-granted", "Mark of The Speed God event", ["There must be at least one signed driver without the Mark of The Speed God."]);
-    }
-
-    if (!suspensionEligibleCount) {
-      addLocked("suspension", "Decelerationist suspension event", [
-        "At least one signed driver must have raced 20 or more laps this season.",
-      ]);
-    }
-
-    if (!hasSigned) {
-      addLocked("speed-madness-next", "Speed Madness warning event", ["There must be at least one signed driver."]);
-    }
-
-    if (uniqueKeys.has("body-envy")) {
-      addExhausted("body-envy", "Simultaneous Body Envy", ["This unique event has already occurred this season."]);
-    } else {
-      const conditions = [];
-      if (racesRun < 10) conditions.push(`Race 10 must be completed first. Current completed races: ${racesRun}.`);
-      if (racesRun >= SEASON_RACES) conditions.push("This event must occur before the season is complete.");
-      if (!bodyEligibleTeams) conditions.push("At least one team must have 4 or more signed drivers.");
-      if (conditions.length) addLocked("body-envy", "Simultaneous Body Envy", conditions);
-    }
+    const activeAsscast = !seriesStarted;
+    const signedRequirement = { text: "At least one driver is currently signed.", met: hasSigned };
+    const seriesDefinitions = [
+      {
+        id: "series-1",
+        name: "Mav McCool Series",
+        category: "flavor",
+        events: [
+          {
+            key: "series-1-1",
+            name: "Mav McCool Series 1.1",
+            template: "Former ASSCAR driver and popular media personality Mav McCool (host of ASSCAST with Mav McCool, and Dora The Explorer, LIVE!) has been named as the defendant in 12 class action lawsuits. Among the groups suing him are The Church of Velocitus, The East Coast Prison Guards' Union, Spain, and women.",
+            requirements: [{ text: "At least two ASSCAST events have occurred before series event 1 can occur.", met: asscastCount >= 2 }],
+          },
+          {
+            key: "series-1-2",
+            name: "Mav McCool Series 1.2",
+            template: "12-time concurrent class-action defendant Mav McCool has failed to appear in court. A bench warrant has been put out for his arrest.",
+          },
+          {
+            key: "series-1-3",
+            name: "Mav McCool Series 1.3",
+            template: "Mav McCool has disappeared from the public and private eye, and his status is unknown at this time. There is still a warrant out for his arrest. If anyone has any information about his whereabouts please contact 1-800-ASSCALL.",
+          },
+          {
+            key: "series-1-4",
+            name: "Mav McCool Series 1.4",
+            template: "During qualifiers for [most recent race], the unthinkable occurred: a glorious member of our benevolent Stewards (may their song ring forever) was assassinated. Interpol agents and S.U.R.G.E operators have been activated to ensure the identification and capture of the craven killer.",
+          },
+          {
+            key: "series-1-5",
+            name: "Mav McCool Series 1.5",
+            template: "The heretical assassin of The Slain Steward has been captured by S.U.R.G.E operators, and has been identified as former ASSCAR driver and media personality Mav McCool. His legacy is now one of cowardice and shame.",
+          },
+        ],
+      },
+    ];
+    const seriesEventTemplates = (seriesDefinitions || []).flatMap((series) => (
+      (series.events || []).map((event, index, seriesEvents) => {
+        const previousEvent = seriesEvents[index - 1];
+        const previousOccurred = !previousEvent || eventKeys.has(previousEvent.key) || uniqueKeys.has(previousEvent.key);
+        const requirements = [
+          ...(index > 0 ? [{ text: "Earlier event in this series must occur", met: previousOccurred }] : []),
+          ...(event.requirements || []),
+        ];
+        return {
+          key: event.key,
+          name: event.name || `${series.name} ${index + 1}`,
+          category: event.category || series.category,
+          template: event.template,
+          used: eventKeys.has(event.key) || uniqueKeys.has(event.key) ? 1 : 0,
+          max: 1,
+          series: series.id,
+          requirements,
+        };
+      })
+    ));
+    const templates = [
+      {
+        key: "asscast-top-1",
+        name: "ASSCAST: Manager Dislike",
+        category: "flavor",
+        template: "During an appearance on the podcast ASSCAST with Mav McCool, [team's driver with highest points] of [team] boasted, \"Mav, without me their whole operation would fall apart. I'm a saint over there, and it's kinda awkward because I just... like... don't like our manager at all.\"",
+        used: uniqueKeys.has("asscast-top-1") ? 1 : 0,
+        max: 1,
+        requirements: [{ text: "The Mav McCool series has not started.", met: activeAsscast }, signedRequirement],
+      },
+      {
+        key: "asscast-top-2",
+        name: "ASSCAST: Unstoppable",
+        category: "flavor",
+        template: "During an appearance on the podcast ASSCAST with Mav McCool, [team's driver with highest points] of [team] said, \"Ya know, I might be unstoppable, Mav. That sounds dickish but at this point it feels like no one else is really even trying. At least, not on my team.\"",
+        used: uniqueKeys.has("asscast-top-2") ? 1 : 0,
+        max: 1,
+        requirements: [{ text: "The Mav McCool series has not started.", met: activeAsscast }, signedRequirement],
+      },
+      {
+        key: "asscast-least",
+        name: "ASSCAST: Least Scoring Driver",
+        category: "flavor",
+        template: "In a tearful moment on the podcast ASSCAST with Mav McCool, [signed league driver with the least points] said, \"I just got a lot of stuff going on right now, Mav. Like ok, I get it, I'm an embarrassment! Almost makes me think about The Decelerator...\"",
+        used: uniqueKeys.has("asscast-least") ? 1 : 0,
+        max: 1,
+        requirements: [{ text: "The Mav McCool series has not started.", met: activeAsscast }, signedRequirement],
+      },
+      {
+        key: "asscast-short-stint",
+        name: "ASSCAST: Short Stint Complaint",
+        category: "flavor",
+        template: "On the podcast ASSCAST with Mav McCool, [team's driver in their relay plan who had the shortest stint length last race] of [team] said, \"I'm tired of getting the scraps, Mav. [team's Pit Coach's name] just has it out for me. Ha, get this, did you know [team's Pit Coach's name]'s specialty is '[team's pit coach specialty]'? Like, the fuck is that?\"",
+        used: uniqueKeys.has("asscast-short-stint") ? 1 : 0,
+        max: 1,
+        requirements: [
+          { text: "The Mav McCool series has not started.", met: activeAsscast },
+          { text: "At least one race has been completed this season.", met: Boolean(lastRaceForSeason(season)) },
+          signedRequirement,
+        ],
+      },
+      {
+        key: "asscast-refusal",
+        name: "ASSCAST: Refusal",
+        category: "flavor",
+        template: "When pressed to fling a little mud on the podcast ASSCAST with Mav McCool, [random signed driver] of [team] said, \"I'm tired of this, Mr. McCool. You are an odious weasel, and I will not denigrate my siblings in the eternal search for speed simply for the amusement of yourself and your listeners.\"",
+        used: uniqueKeys.has("asscast-refusal") ? 1 : 0,
+        max: 1,
+        requirements: [{ text: "The Mav McCool series has not started.", met: activeAsscast }, signedRequirement],
+      },
+      {
+        key: "dinner",
+        name: "Dinner Rumor",
+        category: "flavor",
+        template: "[Team A's best driver] was seen having dinner with [a different team]'s manager at [place], [mood].",
+        used: ["Alinea", "a Denny's"].filter((place) => uniqueKeys.has(`dinner:${place}`)).length,
+        max: 2,
+        variables: {
+          place: ["Alinea", "a Denny's"],
+          mood: ["gazing longingly into each other's eyes", "deep in conversation"],
+        },
+        requirements: [signedRequirement],
+      },
+      {
+        key: "release",
+        name: "Driver Release",
+        category: "flavor",
+        template: "[Signed veteran driver of any team] of [team] has just released a new [product] titled [title].",
+        used: usedCount("release"),
+        max: 2,
+        variables: {
+          product: ["cook book", "memoir", "docuseries", "biopic", "YA novel"],
+          title: ["Life in the ASS Lane", "Assume the Pole Position", "If I Slow Down I Will Actually Die", "Don't Cry for Me, Nagasaki", "If I Did It: Confessions of the Killer"],
+        },
+        requirements: [signedRequirement],
+      },
+      {
+        key: "ad",
+        name: "Product Ad",
+        category: "flavor",
+        template: "[random signed driver] of [team] appeared in an ad for [product], saying \"After a long day of going as fast as Velocitus will let me, nothing winds me down quite like [same product]!\"",
+        used: ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"].filter((product) => uniqueKeys.has(`ad:${product}`)).length,
+        max: 4,
+        variables: { product: ["Coca-Cola", "fourLOKO", "Birkenstocks", "Cialis"] },
+        requirements: [signedRequirement],
+      },
+      {
+        key: "compuzoid",
+        name: "Compuzoid Reveal",
+        category: "flavor",
+        template: "[Driver name] from [Team name] has been seen [behavior]. This can mean only one thing... [same driver name] is a compuzoid.",
+        used: usedCount("compuzoid"),
+        max: 3,
+        variables: { behavior: ["swallowing D batteries", "tonguing an electrical outlet", "screeching a fax machine tone into their cell phone"] },
+        requirements: [{ text: "At least one signed driver is not already a compuzoid.", met: nonCompuzoidCount > 0 }],
+      },
+      ...seriesEventTemplates,
+      {
+        key: "yips",
+        name: "Yips Qualifier Penalty",
+        category: "mechanical",
+        template: "[random signed driver] on [driver's team] [cause] and blows it during their practice laps. They get the yips and bomb during their next qualifier, giving their car last place on the grid.",
+        used: ["contemplates nothingness", "shows up with a hangover", "has a falling out with their mother"].filter((cause) => uniqueKeys.has(`yips:${cause}`)).length,
+        max: 3,
+        variables: { cause: ["contemplates nothingness", "shows up with a hangover", "has a falling out with their mother"] },
+        requirements: [signedRequirement],
+      },
+      {
+        key: "mark-granted",
+        name: "Mark Granted",
+        category: "mechanical",
+        template: "[random signed driver without a Mark of The Speed God] on [driver's team] has a private audience with The Stewards and is bestowed with The Mark of The Speed God.",
+        used: usedCount("mark-granted"),
+        max: null,
+        requirements: [{ text: "At least one signed driver does not have the Mark of The Speed God.", met: signed.some((racer) => !racer.speed_mark) }],
+      },
+      {
+        key: "suspension",
+        name: "Decelerationist Suspension",
+        category: "mechanical",
+        template: "[random signed driver who has raced at least 20 laps this season] on [driver's team] has been seen cavorting with Decelerationists. As penance, The Stewards have suspended them for the next two races.",
+        used: usedCount("suspension"),
+        max: null,
+        requirements: [{ text: "At least one signed driver has raced 20 or more laps this season.", met: suspensionEligibleCount > 0 }],
+      },
+      {
+        key: "speed-madness-next",
+        name: "Speed Madness Warning",
+        category: "mechanical",
+        template: "Practice laps appear to have left [random signed driver] of [driver's team] teetering on the edge of sanity. The next time they race they will likely succumb to Speed Madness.",
+        used: usedCount("speed-madness-next"),
+        max: null,
+        requirements: [signedRequirement],
+      },
+      {
+        key: "body-envy",
+        name: "Simultaneous Body Envy",
+        category: "mechanical",
+        template: "[signed driver not best/worst on team] and [another driver not best/worst on same team] have been diagnosed with Simultaneous Body Envy and swap name halves and stat values.",
+        used: uniqueKeys.has("body-envy") ? 1 : 0,
+        max: 1,
+        requirements: [
+          { text: "Race 10 has been completed.", met: racesRun >= 10 },
+          { text: "The season is not complete.", met: racesRun < SEASON_RACES },
+          { text: "At least one team has 4 or more signed drivers.", met: bodyEligibleTeams > 0 },
+        ],
+      },
+    ];
+    const decorate = (template) => {
+      const exhausted = Number.isFinite(template.max) && template.used >= template.max;
+      const lockedRequirements = (template.requirements || []).filter((requirement) => !requirement.met);
+      return { ...template, exhausted, locked: !exhausted && lockedRequirements.length > 0 };
+    };
+    const decorated = templates.map(decorate);
 
     return {
       season,
       racesRun,
       occurredCount: events.length,
-      eligible,
-      locked,
-      exhausted,
+      eligible: decorated.filter((template) => !template.exhausted && !template.locked),
+      locked: decorated.filter((template) => template.locked),
+      exhausted: decorated.filter((template) => template.exhausted),
     };
   }
 
