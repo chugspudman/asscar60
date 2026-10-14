@@ -904,7 +904,7 @@ function initialRaceProgressStandings(entries = []) {
 
 function interpolatedRaceProgressStandings(race, elapsed) {
   if (!race?.events?.length || elapsed < 0) return initialRaceProgressStandings(race?.entries || []);
-  const timeline = race.events
+  const timeline = race.stateTimeline || race.events
     .filter((event) => event.standings?.length && event.time >= 0 && event.time <= race.duration)
     .sort((a, b) => a.time - b.time);
   if (!timeline.length) return initialRaceProgressStandings(race.entries || []);
@@ -953,6 +953,48 @@ function interpolatedRaceProgressStandings(race, elapsed) {
     ...standing,
     position: index + 1,
   }));
+}
+
+function prepareRaceTimeline(race) {
+  if (!race) return;
+  race.events = [...(race.events || [])].sort((a, b) => a.time - b.time);
+  race.stateTimeline = race.events.filter((event) => (
+    event.standings?.length
+    && event.time >= 0
+    && event.time <= race.duration
+  ));
+}
+
+function firstFutureRaceEventIndex(race, elapsed) {
+  const events = race?.events || [];
+  const target = Math.min(elapsed, race?.duration || elapsed);
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((events[middle]?.time ?? 0) <= target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function renderRaceSnapshotAtElapsed(race, elapsed) {
+  const standings = interpolatedRaceProgressStandings(race, elapsed);
+  if (standings.length) {
+    elements.standings.innerHTML = standingsMarkup(standings);
+    renderRacePodium(standings);
+    renderRaceProgress(standings, "Live lap");
+    const leading = standings[0];
+    elements.leader.textContent = entryById(leading.id)?.carName || leading.id;
+    const currentLap = Math.min(TOTAL_LAPS, leading.completedLaps + (leading.status === "finished" ? 0 : 1));
+    elements.lap.textContent = `Leader lap ${currentLap}`;
+  }
+  const recentMessages = (race.events || [])
+    .filter((event) => event.message && event.time <= elapsed)
+    .reverse();
+  elements.feed.innerHTML = recentMessages.length
+    ? recentMessages.map(raceFeedItemMarkup).join("")
+    : "";
 }
 
 function qualifierIncidentMarkup(entry) {
@@ -1303,10 +1345,12 @@ function tick() {
 
 function playRace(race, replay = false, initialElapsed = null) {
   clearInterval(state.timer);
+  prepareRaceTimeline(race);
   state.race = race;
   state.idleFeedKey = null;
   state.elapsed = initialElapsed ?? -(race.preRaceDuration || 0);
-  state.eventIndex = 0;
+  const resumesLiveRace = !replay && state.elapsed > 0;
+  state.eventIndex = resumesLiveRace ? firstFutureRaceEventIndex(race, state.elapsed) : 0;
   state.running = true;
   state.replay = replay;
   if (!replay) state.activeLeagueRace = race;
@@ -1330,6 +1374,9 @@ function playRace(race, replay = false, initialElapsed = null) {
   renderInitialStandings(race.entries);
   renderRacePodium([]);
   renderRaceProgress(initialRaceProgressStandings(race.entries), state.elapsed < 0 ? "Starting grid" : "Live lap");
+  if (resumesLiveRace) {
+    renderRaceSnapshotAtElapsed(race, Math.min(state.elapsed, race.duration));
+  }
   state.timer = setInterval(tick, 100);
   tick();
 }
