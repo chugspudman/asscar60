@@ -7204,21 +7204,24 @@ export function createLeagueStore(path = ":memory:") {
     const illegalCompuzoidEntries = baseEntries.filter((entry) => (
       entry.stints.some((stint) => stint.driver?.compuzoid && (stint.end - stint.start + 1) > 20)
     ));
-    const illegalCompuzoidEntryIds = illegalCompuzoidEntries.map((entry) => entry.id);
-    const illegalCompuzoidDnfMessages = Object.fromEntries(illegalCompuzoidEntries.map((entry) => [
+    const forcedDnfEntryIds = new Set(illegalCompuzoidEntries.map((entry) => entry.id));
+    const forcedDnfMessages = Object.fromEntries(illegalCompuzoidEntries.map((entry) => [
       entry.id,
       `${entry.carName} is ruled a DNF because its relay plan violates the compuzoid stint limit.`,
     ]));
     const activeEffects = activeSeasonEventEffects(season);
-    const suspendedRacerIds = new Set(activeEffects
+    const unavailableEffectsByRacer = new Map(activeEffects
       .filter((effect) => ["suspension", "speed_madness_recovery"].includes(effect.type) && effect.racer_id)
-      .map((effect) => effect.racer_id));
-    const suspendedDriver = baseEntries
-      .flatMap((entry) => entry.stints.map((stint) => stint.driver))
-      .filter(Boolean)
-      .find((driver) => suspendedRacerIds.has(driver.id));
-    if (suspendedDriver) {
-      throw new Error(`${suspendedDriver.name} is unavailable and cannot race.`);
+      .map((effect) => [effect.racer_id, effect]));
+    for (const entry of baseEntries) {
+      const unavailableStint = entry.stints.find((stint) => unavailableEffectsByRacer.has(stint.driver?.id));
+      if (!unavailableStint) continue;
+      const effect = unavailableEffectsByRacer.get(unavailableStint.driver.id);
+      const reason = effect.type === "speed_madness_recovery"
+        ? "is recovering from Speed Madness"
+        : "is suspended";
+      forcedDnfEntryIds.add(entry.id);
+      forcedDnfMessages[entry.id] = `${entry.carName} is ruled a DNF because ${unavailableStint.driver.name} ${reason} and cannot race.`;
     }
     const yipsEffects = activeEffects.filter((effect) => effect.type === "yips_next_qualifier" && effect.racer_id);
     const yipsRacerIds = new Set(yipsEffects.map((effect) => effect.racer_id));
@@ -7241,8 +7244,8 @@ export function createLeagueStore(path = ":memory:") {
       pitCoachesByTeam: pitCoachRaceContext(season),
       preRaceSpeedMadnessRacerIds: speedMadnessRacerIds,
       forcedDnfTeamIds: rookieReleaseDnfTeamIds,
-      forcedDnfEntryIds: illegalCompuzoidEntryIds,
-      forcedDnfMessages: illegalCompuzoidDnfMessages,
+      forcedDnfEntryIds: [...forcedDnfEntryIds],
+      forcedDnfMessages,
     });
     const pole = [...entries].sort((a, b) => a.startingGridPosition - b.startingGridPosition)[0];
     if (pole) {
@@ -7319,12 +7322,13 @@ export function createLeagueStore(path = ":memory:") {
       const usedAt = createdAt;
       for (const entry of entries) {
         if (rookieReleaseDnfTeamIds.includes(entry.teamId)) continue;
+        if (forcedDnfEntryIds.has(entry.id)) continue;
         for (const racerId of new Set(entry.stints.map((stint) => stint.driver.id))) {
           insertRaceParticipation.run(developmentWeek, racerId, entry.teamId, usedAt);
         }
       }
       const usedRacerIds = new Set(entries
-        .filter((entry) => !rookieReleaseDnfTeamIds.includes(entry.teamId))
+        .filter((entry) => !rookieReleaseDnfTeamIds.includes(entry.teamId) && !forcedDnfEntryIds.has(entry.id))
         .flatMap((entry) => entry.stints.map((stint) => stint.driver.id)));
       for (const effect of [...yipsEffects, ...speedMadnessEffects]) {
         if (usedRacerIds.has(effect.racer_id)) {
