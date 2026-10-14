@@ -582,16 +582,6 @@
           </div>
           <p id="rookie-draft-message" class="save-message" role="status"></p>
         </div>
-        <div id="rookie-release-panel" class="rookie-release-panel" hidden>
-          <div class="section-heading">
-            <div><span class="eyebrow">Roster compliance</span><h3>Select a driver to release to free agency</h3></div>
-          </div>
-          <p id="rookie-release-team" class="muted"></p>
-          <label class="move-field">Release
-            <select id="rookie-release-racer"></select>
-          </label>
-          <button id="submit-rookie-release" class="primary-button">Release racer</button>
-        </div>
         <div id="rookie-draft-layout" class="draft-layout">
           <section id="rookie-draft-pool-panel" class="draft-pool-panel">
             <div class="section-heading">
@@ -660,6 +650,17 @@
         <div id="pit-coach-current" class="move-field pit-coach-current" hidden></div>
         <button id="save-pit-coach" class="primary-button full">Save Pit Coach specialty</button>
         <p id="pit-coach-message" class="save-message" role="status"></p>
+      </div>
+      <div id="rookie-release-panel" class="draft-retention-fields admin-retention-panel panel" hidden>
+        <div class="section-heading">
+          <div><span class="eyebrow">Roster compliance</span><h2>Release a Veteran</h2></div>
+        </div>
+        <p>Select a veteran driver from your team to release from the league. If you do not, your team will DNF every race until you do.</p>
+        <label class="draft-retention-field">Veteran
+          <select id="rookie-release-racer"></select>
+        </label>
+        <button id="submit-rookie-release" class="primary-button full">Be Gone!</button>
+        <p id="rookie-release-team" class="save-message" role="status"></p>
       </div>
       <div class="moves-layout">
         <section class="panel moves-panel">
@@ -907,6 +908,6 @@
       </div>
     </form>
   </dialog>
-  <script type="module" src="/app.mjs?v=trade-builder-20260718d"></script>
+  <script type="module" src="/app.mjs?v=startup-defer-20261013"></script>
 </body>
 </html>
