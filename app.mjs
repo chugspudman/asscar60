@@ -5423,8 +5423,9 @@ async function startApp() {
     return;
   }
   try {
-    await initialize();
     showGameShell();
+    renderNewsTicker();
+    await initialize();
     renderNewsTicker();
     stabilizeInitialLayout();
     raceCenterInterval = setInterval(syncRaceCenter, 2_000);
