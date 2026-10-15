@@ -7068,6 +7068,12 @@ export function createLeagueStore(path = ":memory:") {
       forecastCondition,
       activeRaceId,
       raceActive: activeRaceId !== null,
+      unavailableRelayDrivers: Object.fromEntries(activeRaceLimitedSeasonEventEffects(season).map((effect) => [
+        effect.racer_id,
+        effect.type === "speed_madness_recovery"
+          ? "is recovering from Speed Madness and must sit out the next race."
+          : "is suspended and cannot race until their suspension ends.",
+      ])),
       raceScheduleComplete,
       seasonComplete,
       darkSacrifice,

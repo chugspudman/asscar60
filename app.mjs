@@ -2017,7 +2017,8 @@ function renderLineupEditor() {
     racerById(selection?.driverId)?.compuzoid
     && Number(selection?.laps || 0) > 20
   ));
-  if (savedCompuzoidLimit && !raceLockReason) state.relayPlanEditing = true;
+  const savedUnavailableDriver = selections.some((selection) => relayDriverUnavailableReason(selection?.driverId));
+  if ((savedCompuzoidLimit || savedUnavailableDriver) && !raceLockReason) state.relayPlanEditing = true;
   elements.lineupEditor.innerHTML = [0, 1].map((carIndex) => `
     <div class="car-lineup" data-car="${carIndex}">
       <div class="car-lineup-heading">
@@ -2080,19 +2081,21 @@ function updateStintRanges() {
   [0, 1].forEach((carIndex) => {
     let total = 0;
     let compuzoidLimit = false;
+    let unavailableDriver = false;
     for (let stintIndex = 0; stintIndex < 3; stintIndex += 1) {
       const slot = carIndex * 3 + stintIndex;
       const input = elements.lineupEditor.querySelector(`[data-laps-slot="${slot}"]`);
       const select = elements.lineupEditor.querySelector(`[data-driver-slot="${slot}"]`);
       const laps = Number(input.value) || 0;
       total += laps;
+      unavailableDriver ||= Boolean(relayDriverUnavailableReason(select?.value));
       if (racerById(select?.value)?.compuzoid && laps > 20) {
         compuzoidLimit = true;
       }
     }
     const totalElement = elements.lineupEditor.querySelector(`[data-total="${carIndex}"]`);
     totalElement.textContent = `${total} / 60 laps`;
-    totalElement.classList.toggle("invalid", total !== 60 || compuzoidLimit);
+    totalElement.classList.toggle("invalid", total !== 60 || compuzoidLimit || unavailableDriver);
   });
   updateLineupEligibility();
 }
@@ -2104,7 +2107,16 @@ function currentLineupAssignments() {
   }));
 }
 
+function relayDriverUnavailableReason(driverId) {
+  return state.raceCenter.unavailableRelayDrivers?.[driverId] || "";
+}
+
 function lineupIneligibilityReason(assignments) {
+  const unavailableAssignment = assignments.find((assignment) => relayDriverUnavailableReason(assignment.driverId));
+  if (unavailableAssignment) {
+    const driver = teams.flatMap((team) => team.drivers).find((racer) => racer.id === unavailableAssignment.driverId);
+    return `${driver?.name || "That driver"} ${relayDriverUnavailableReason(unavailableAssignment.driverId)}`;
+  }
   const raceLockReason = relayPlanRaceLockReason();
   if (raceLockReason) return raceLockReason;
   if (assignments.some((assignment) => assignment.laps < 5 || assignment.laps > 40)) {
@@ -2133,6 +2145,11 @@ function lineupIneligibilityReason(assignments) {
 }
 
 function updateLineupEligibility() {
+  elements.lineupEditor.querySelectorAll("[data-driver-slot] option").forEach((option) => {
+    const reason = relayDriverUnavailableReason(option.value);
+    option.disabled = Boolean(reason);
+    option.title = reason;
+  });
   const reason = lineupIneligibilityReason(currentLineupAssignments());
   const raceLockReason = relayPlanRaceLockReason();
   elements.saveLineup.disabled = Boolean(raceLockReason)
@@ -4372,7 +4389,7 @@ elements.lineupEditor.addEventListener("input", (event) => {
     if (performance && role) {
       performance.outerHTML = relayPerformanceMarkup(event.target.value, role);
     }
-    updateLineupEligibility();
+    updateStintRanges();
   }
 });
 
@@ -5374,11 +5391,16 @@ async function hydrateDeferredStartupData() {
 }
 
 async function syncRaceCenter() {
+  const priorUnavailableRelayDrivers = JSON.stringify(state.raceCenter.unavailableRelayDrivers || {});
   const ceremonyWasAvailable = Boolean(state.raceCenter.seasonComplete && state.raceCenter.champions);
   const darkSacrificeWasVoting = state.darkSacrifice.status === "voting";
   const darkSacrificeWasResolved = state.darkSacrifice.status === "resolved";
   const priorRelayLockReason = relayPlanRaceLockReason();
   await Promise.all([loadRaceCenter(), loadDarkSacrifice()]);
+  if (priorUnavailableRelayDrivers !== JSON.stringify(state.raceCenter.unavailableRelayDrivers || {})) {
+    if (state.relayPlanEditing) updateStintRanges();
+    else renderLineupEditor();
+  }
   const nextRelayLockReason = relayPlanRaceLockReason();
   const darkSacrificeNewlyResolved = !darkSacrificeWasResolved
     && state.darkSacrifice.status === "resolved";
