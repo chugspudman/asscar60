@@ -1761,6 +1761,15 @@ export function createLeagueStore(path = ":memory:") {
       PRIMARY KEY (race_id, entry_id, lap)
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS team_point_adjustments (
+      season INTEGER NOT NULL,
+      team_id TEXT NOT NULL REFERENCES team_plans(team_id),
+      adjustment_key TEXT NOT NULL,
+      points INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (season, team_id, adjustment_key)
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS season_history (
       season INTEGER PRIMARY KEY,
       team_standings_json TEXT NOT NULL,
@@ -4096,9 +4105,12 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function darkSacrificeBonusesForSeason(season) {
-    const state = readDarkSacrificeState.get(season);
-    if (state?.status !== "resolved") return {};
     const bonuses = {};
+    for (const adjustment of database.prepare("SELECT team_id, SUM(points) AS points FROM team_point_adjustments WHERE season = ? GROUP BY team_id").all(season)) {
+      bonuses[adjustment.team_id] = adjustment.points;
+    }
+    const state = readDarkSacrificeState.get(season);
+    if (state?.status !== "resolved") return bonuses;
     for (const vote of readDarkSacrificeVotes.all(season)) {
       if (vote.racer_id) bonuses[vote.team_id] = (bonuses[vote.team_id] || 0) + DARK_SACRIFICE_BONUS_POINTS;
     }
@@ -5126,6 +5138,7 @@ export function createLeagueStore(path = ":memory:") {
   function rookieDraftOrder(season = 1) {
     const standings = calculateSeasonChampionships(
       readSeasonRacesForChampionship.all(season),
+      darkSacrificeBonusesForSeason(season),
     ).teams;
     const reverseStandings = [...standings].reverse().map((standing) => standing.teamId);
     return [...reverseStandings, ...[...reverseStandings].reverse()];
