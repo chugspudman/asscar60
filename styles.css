@@ -557,6 +557,12 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
   align-self: center;
 }
 .racer-status-tag { color: var(--accent); font: inherit; letter-spacing: .04em; }
+.speed-madness-icon {
+  width: 19px; height: 20px; display: inline-block; flex: 0 0 auto; align-self: center;
+  background: url("/assets/speed-madness-icon.svg") center / 19px 20px no-repeat;
+  image-rendering: pixelated;
+}
+.speed-madness-icon[hidden] { display: none; }
 .roster-grid .driver-card .racer-identity { min-height: 36px; margin-bottom: 8px; }
 .driver-card p { color: var(--muted); font-size: 11px; margin: 4px 0 12px; min-height: 32px; }
 .ratings { display: grid; grid-template-columns: repeat(7, minmax(38px, 1fr)); gap: 5px; }

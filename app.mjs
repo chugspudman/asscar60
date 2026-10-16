@@ -1938,6 +1938,14 @@ function racerIdentityMarkup(racer) {
           title="Compuzoid"
         ></span>
       ` : ""}
+      <span
+        class="speed-madness-icon"
+        data-speed-madness-racer="${escapeAttribute(racer.id)}"
+        role="img"
+        aria-label="Speed Madness"
+        title="Speed Madness"
+        ${(state.raceCenter.speedMadnessRacerIds || []).includes(racer.id) ? "" : "hidden"}
+      ></span>
       <span>${escapeHtml(racer.pronouns)}</span>
     </div>`;
 }
@@ -4013,6 +4021,10 @@ async function loadRaceCenter() {
   const response = await fetch("/api/races");
   if (!response.ok) throw new Error("Could not load race archive.");
   state.raceCenter = await response.json();
+  const speedMadnessRacerIds = new Set(state.raceCenter.speedMadnessRacerIds || []);
+  document.querySelectorAll("[data-speed-madness-racer]").forEach((icon) => {
+    icon.hidden = !speedMadnessRacerIds.has(icon.dataset.speedMadnessRacer);
+  });
 }
 
 async function loadRacerDirectory() {

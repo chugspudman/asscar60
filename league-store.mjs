@@ -6992,6 +6992,19 @@ export function createLeagueStore(path = ":memory:") {
     const week = Math.min(WEEKS_PER_SEASON, Math.floor(seasonRacesRun / RACES_PER_WEEK) + 1);
     const racesRun = countWeekRaces.get(season, week).count;
     const activeRaceId = readRuntime.get().active_race_id;
+    const speedMadnessRacerIds = new Set(activeRaceLimitedSeasonEventEffects(season)
+      .filter((effect) => effect.type === "speed_madness_recovery")
+      .map((effect) => effect.racer_id));
+    if (activeRaceId !== null) {
+      const activeMadness = database.prepare(`
+        SELECT DISTINCT json_extract(event.value, '$.speedMadnessRecoveryRacerId') AS racer_id
+        FROM races, json_each(races.events_json) AS event
+        WHERE races.id = ?
+          AND json_extract(event.value, '$.speedMadnessRecoveryRacerId') IS NOT NULL
+          AND json_extract(event.value, '$.time') <= (julianday(?) - julianday(COALESCE(races.start_at, races.created_at))) * 86400
+      `).all(activeRaceId, new Date().toISOString());
+      for (const event of activeMadness) speedMadnessRacerIds.add(event.racer_id);
+    }
     const completedAllRaces = readAllRacesForCareer.all()
       .filter((race) => race.id !== activeRaceId);
     const completedSeasonRaces = completedAllRaces
@@ -7087,6 +7100,7 @@ export function createLeagueStore(path = ":memory:") {
           ? "is recovering from Speed Madness and must sit out the next race."
           : "is suspended and cannot race until their suspension ends.",
       ])),
+      speedMadnessRacerIds: [...speedMadnessRacerIds],
       raceScheduleComplete,
       seasonComplete,
       darkSacrifice,
