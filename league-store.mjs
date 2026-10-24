@@ -215,6 +215,17 @@ function addEasternDays(parts, days) {
   return easternParts(new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12, 0, 0)));
 }
 
+export function speedMadnessRecoveryExpiresAt(occurredAt) {
+  const recoveryEnd = addEasternDays(easternParts(new Date(occurredAt)), 2);
+  return easternWallTimeToDate(recoveryEnd, 0, 0).toISOString();
+}
+
+function speedMadnessRecoveryActive(effect, now = Date.now()) {
+  const payload = JSON.parse(effect.payload_json || "{}");
+  const expiresAt = payload.expiresAt || speedMadnessRecoveryExpiresAt(effect.created_at);
+  return Number(effect.remaining_races || 0) > 0 && now < new Date(expiresAt).getTime();
+}
+
 function isEasternWeekend(parts) {
   return parts.weekday === "Sat" || parts.weekday === "Sun";
 }
@@ -4873,7 +4884,9 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function activeSeasonEventEffects(season = getActiveSeason()) {
-    return readActiveSeasonEventEffects.all(season);
+    return readActiveSeasonEventEffects.all(season).filter((effect) => (
+      effect.type !== "speed_madness_recovery" || speedMadnessRecoveryActive(effect)
+    ));
   }
 
   function activeRaceLimitedSeasonEventEffects(season, createdBefore = null) {
@@ -4887,12 +4900,12 @@ export function createLeagueStore(path = ":memory:") {
   function advanceRaceLimitedSeasonEventEffects(season, createdBefore = null) {
     const now = new Date().toISOString();
     for (const effect of activeRaceLimitedSeasonEventEffects(season, createdBefore)) {
-      decrementSeasonEventEffect.run(effect.id);
+      if (effect.type === "suspension") decrementSeasonEventEffect.run(effect.id);
     }
-    for (const effect of activeSeasonEventEffects(season)) {
+    for (const effect of readActiveSeasonEventEffects.all(season)) {
       if (
-        ["suspension", "speed_madness_recovery"].includes(effect.type)
-        && Number(effect.remaining_races || 0) <= 0
+        (effect.type === "suspension" && Number(effect.remaining_races || 0) <= 0)
+        || (effect.type === "speed_madness_recovery" && !speedMadnessRecoveryActive(effect))
       ) {
         consumeSeasonEventEffect.run(now, effect.id);
       }
@@ -7115,7 +7128,7 @@ export function createLeagueStore(path = ":memory:") {
       unavailableRelayDrivers: Object.fromEntries(activeRaceLimitedSeasonEventEffects(season).map((effect) => [
         effect.racer_id,
         effect.type === "speed_madness_recovery"
-          ? "is recovering from Speed Madness and must sit out the next race."
+          ? "is recovering from Speed Madness and must rest through the next calendar day (Eastern time)."
           : "is suspended and cannot race until their suspension ends.",
       ])),
       speedMadnessRacerIds: [...speedMadnessRacerIds],
@@ -7466,13 +7479,14 @@ export function createLeagueStore(path = ":memory:") {
         if (event.markGranted && event.racerId) grantSpeedMark.run(event.racerId);
         if (event.speedMadnessRecoveryRacerId) {
           const entry = race.entries.find((item) => item.id === event.entryId);
+          const occurredAt = new Date(new Date(race.startAt || race.createdAt).getTime() + event.time * 1000).toISOString();
           insertSeasonEventEffect.run(
             null,
             race.season,
             "speed_madness_recovery",
             entry?.teamId || null,
             event.speedMadnessRecoveryRacerId,
-            "{}",
+            JSON.stringify({ expiresAt: speedMadnessRecoveryExpiresAt(occurredAt) }),
             1,
             new Date().toISOString(),
           );

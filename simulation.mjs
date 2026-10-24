@@ -96,7 +96,7 @@ const STRANGE_EFFECT_SUMMARIES = [
   ["grace", "Reset DRIVER and CAR degradation"],
   [
     "gets SPEED MADNESS!",
-    "Control, Overtaking, and Stamina maxed this stint; must recover next race; Given The Mark of The Speed God permanently",
+    "Control, Overtaking, and Stamina maxed this stint; must recover through the next calendar day (Eastern time); Given The Mark of The Speed God permanently",
   ],
   ["comes to a dead stop.", "Driver DNFs; No points"],
   ["time serving The Lord of Laps.", "Control, Overtaking, and Stamina set to 3 for the rest of this stint"],
