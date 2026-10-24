@@ -2642,6 +2642,12 @@ export function createLeagueStore(path = ":memory:") {
     WHERE season = ?
     ORDER BY occurred_at, id
   `);
+  const readSeasonEventStoryHistory = database.prepare(`
+    SELECT event_key, unique_key
+    FROM season_events
+    WHERE season <= ? AND (event_key LIKE 'series-%' OR event_key LIKE 'asscast-%')
+    ORDER BY season, occurred_at, id
+  `);
   const readSeasonEventByUniqueKey = database.prepare(`
     SELECT id FROM season_events WHERE season = ? AND unique_key = ?
   `);
@@ -4334,13 +4340,21 @@ export function createLeagueStore(path = ":memory:") {
     insertSeasonEventRead.run(username, eventId, new Date().toISOString());
   }
 
+  function seasonEventStoryProgress(season) {
+    const history = readSeasonEventStoryHistory.all(season);
+    return {
+      eventKeys: new Set(history.flatMap((event) => [event.event_key, event.unique_key].filter(Boolean))),
+      asscastCount: history.filter((event) => event.event_key.startsWith("asscast-")).length,
+    };
+  }
+
   function eligibleSeasonEventCandidates(season, random) {
     const signed = readSignedRacers.all();
     if (!signed.length) return [];
     const racesRun = countSeasonRaces.get(season).count;
     const mvdMap = seasonMvdMap(season);
     const events = readSeasonEventsChronological.all(season);
-    const eventKeys = new Set(events.map((event) => event.event_key));
+    const { eventKeys: storyEventKeys, asscastCount } = seasonEventStoryProgress(season);
     const uniqueKeys = new Set(events.map((event) => event.unique_key).filter(Boolean));
     const usedVariableValues = new Set();
     for (const event of events) {
@@ -4349,12 +4363,12 @@ export function createLeagueStore(path = ":memory:") {
         usedVariableValues.add(`${event.event_key}:${value}`);
       }
     }
-    const asscastCount = events.filter((event) => event.text.includes("ASSCAST with Mav McCool")).length;
-    const seriesStarted = eventKeys.has("series-1-1");
+    const seriesStarted = [...storyEventKeys].some((key) => key.startsWith("series-1-"));
     const asscastAllowed = !seriesStarted;
     const candidates = [];
     const teamBrandName = currentTeamName;
     const addCandidate = (candidate) => {
+      if (candidate.key.startsWith("series-") && storyEventKeys.has(candidate.key)) return;
       if (candidate.uniqueKey && uniqueKeys.has(candidate.uniqueKey)) return;
       if ((candidate.variableValues || []).some((value) => usedVariableValues.has(`${candidate.key}:${value}`))) return;
       if (candidate.variableValues?.length) {
@@ -4488,7 +4502,7 @@ export function createLeagueStore(path = ":memory:") {
       }
     }
 
-    const nextSeriesIndex = [1, 2, 3, 4, 5].find((index) => !eventKeys.has(`series-1-${index}`));
+    const nextSeriesIndex = [1, 2, 3, 4, 5].find((index) => !storyEventKeys.has(`series-1-${index}`));
     if (nextSeriesIndex && (nextSeriesIndex > 1 || asscastCount >= 2)) {
       const texts = {
         1: "Former ASSCAR driver and popular media personality Mav McCool (host of ASSCAST with Mav McCool, and Dora The Explorer, LIVE!) has been named as the defendant in 12 class action lawsuits. Among the groups suing him are The Church of Velocitus, The East Coast Prison Guards' Union, Spain, and women.",
@@ -4603,10 +4617,9 @@ export function createLeagueStore(path = ":memory:") {
     const signed = readSignedRacers.all();
     const racesRun = countSeasonRaces.get(season).count;
     const events = readSeasonEventsChronological.all(season);
-    const eventKeys = new Set(events.map((event) => event.event_key));
+    const { eventKeys: storyEventKeys, asscastCount } = seasonEventStoryProgress(season);
     const uniqueKeys = new Set(events.map((event) => event.unique_key).filter(Boolean));
-    const asscastCount = events.filter((event) => event.text.includes("ASSCAST with Mav McCool")).length;
-    const seriesStarted = eventKeys.has("series-1-1");
+    const seriesStarted = [...storyEventKeys].some((key) => key.startsWith("series-1-"));
     const usedCount = (key) => events.filter((event) => event.event_key === key).length;
     const hasSigned = signed.length > 0;
     const nonCompuzoidCount = signed.filter((racer) => !racer.compuzoid).length;
@@ -4628,7 +4641,7 @@ export function createLeagueStore(path = ":memory:") {
             key: "series-1-1",
             name: "Mav McCool Series 1.1",
             template: "Former ASSCAR driver and popular media personality Mav McCool (host of ASSCAST with Mav McCool, and Dora The Explorer, LIVE!) has been named as the defendant in 12 class action lawsuits. Among the groups suing him are The Church of Velocitus, The East Coast Prison Guards' Union, Spain, and women.",
-            requirements: [{ text: "At least two ASSCAST events have occurred before series event 1 can occur.", met: asscastCount >= 2 }],
+            requirements: [{ text: "At least two ASSCAST events have occurred in the league's history before series event 1 can occur.", met: asscastCount >= 2 }],
           },
           {
             key: "series-1-2",
@@ -4656,7 +4669,7 @@ export function createLeagueStore(path = ":memory:") {
     const seriesEventTemplates = (seriesDefinitions || []).flatMap((series) => (
       (series.events || []).map((event, index, seriesEvents) => {
         const previousEvent = seriesEvents[index - 1];
-        const previousOccurred = !previousEvent || eventKeys.has(previousEvent.key) || uniqueKeys.has(previousEvent.key);
+        const previousOccurred = !previousEvent || storyEventKeys.has(previousEvent.key);
         const requirements = [
           ...(index > 0 ? [{ text: "Earlier event in this series must occur", met: previousOccurred }] : []),
           ...(event.requirements || []),
@@ -4666,7 +4679,7 @@ export function createLeagueStore(path = ":memory:") {
           name: event.name || `${series.name} ${index + 1}`,
           category: event.category || series.category,
           template: event.template,
-          used: eventKeys.has(event.key) || uniqueKeys.has(event.key) ? 1 : 0,
+          used: storyEventKeys.has(event.key) ? 1 : 0,
           max: 1,
           series: series.id,
           requirements,
