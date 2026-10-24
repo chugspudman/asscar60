@@ -1042,13 +1042,15 @@ function calculateTeamChampionshipWins(raceRows, bonusProvider = () => ({})) {
   return wins;
 }
 
-function calculateTeamTotals(raceRows, activeSeason, currentSeasonStandings = [], bonusProvider = () => ({})) {
+function calculateTeamTotals(raceRows, activeSeason, currentSeasonStandings = [], bonusProvider = () => ({}), honors = {}) {
   const totals = Object.fromEntries(teams.map((team) => [team.id, {
     seasonPoints: 0,
     franchisePoints: 0,
     goldMedals: 0,
     silverMedals: 0,
     bronzeMedals: 0,
+    stainsOfSin: 0,
+    mvds: 0,
   }]));
   const racesBySeason = new Map();
   for (const raceRow of raceRows) {
@@ -1083,6 +1085,14 @@ function calculateTeamTotals(raceRows, activeSeason, currentSeasonStandings = []
     }
   }
 
+  for (const sacrifice of honors.darkSacrifices || []) {
+    if (sacrifice.racer_id && totals[sacrifice.team_id]) totals[sacrifice.team_id].stainsOfSin += 1;
+  }
+  for (const standings of (honors.mvdStandingsBySeason || new Map()).values()) {
+    for (const winner of standings.filter((standing) => standing.rank === 1)) {
+      if (totals[winner.teamId]) totals[winner.teamId].mvds += 1;
+    }
+  }
   return totals;
 }
 
@@ -4118,15 +4128,12 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function stainOfSinTeamIds(season = getActiveSeason()) {
-    if (season <= 1) return [];
     const currentSeasonDarkSacrifice = readDarkSacrificeState.get(season);
-    if (
-      countSeasonRaces.get(season).count >= SEASON_RACES
-      && currentSeasonDarkSacrifice?.status === "resolved"
-    ) return [];
+    if (currentSeasonDarkSacrifice?.status === "voting") return [];
+    const sacrificeSeason = currentSeasonDarkSacrifice?.status === "resolved" ? season : season - 1;
     return [...new Set(
       readResolvedDarkSacrifices.all()
-        .filter((vote) => vote.season === season - 1 && vote.racer_id)
+        .filter((vote) => vote.season === sacrificeSeason && vote.racer_id)
         .map((vote) => vote.team_id),
     )];
   }
@@ -7027,6 +7034,17 @@ export function createLeagueStore(path = ":memory:") {
         completedSeasonRaces,
         darkSacrificeBonusesForSeason(season),
       );
+    const mvdStandingsBySeason = new Map(readSeasonHistory.all().map((history) => [
+      history.season, JSON.parse(history.mvd_standings_json),
+    ]));
+    for (const completedSeason of new Set(completedAllRaces.map((race) => race.season))) {
+      if (mvdStandingsBySeason.has(completedSeason) || readDarkSacrificeState.get(completedSeason)?.status !== "resolved") continue;
+      const completedRaces = completedAllRaces.filter((race) => race.season === completedSeason);
+      if (completedRaces.length < SEASON_RACES) continue;
+      mvdStandingsBySeason.set(completedSeason, completedSeason === season
+        ? seasonChampionships.mvds
+        : calculateSeasonChampionships(completedRaces).mvds);
+    }
     const lapPerformance = buildLapPerformanceSummaries();
     const forecastCondition = nextRaceNumber
       ? selectRaceCondition(trackName, forecastSeed)
@@ -7114,6 +7132,7 @@ export function createLeagueStore(path = ":memory:") {
         season,
         seasonChampionships.teams,
         darkSacrificeBonusesForSeason,
+        { darkSacrifices: readResolvedDarkSacrifices.all(), mvdStandingsBySeason },
       ),
       lapPerformance: {
         courseRoleMedians: lapPerformance.courseRoleMedians,

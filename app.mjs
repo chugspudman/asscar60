@@ -1726,7 +1726,7 @@ function renderRaceArchive() {
       <div class="championship-row">
         <span class="position">${String(standing.rank).padStart(2, "0")}</span>
         <i class="team-stripe" style="background:${team?.color || "var(--line)"}"></i>
-        <strong>${escapeHtml(team?.name || standing.teamId)}</strong>
+        <strong>${escapeHtml(team?.name || standing.teamId)}${stainOfSinIconMarkup(standing.teamId)}</strong>
         <span>${pointsLabel(standing.points)} pts</span>
       </div>`;
   }).join("");
@@ -2169,6 +2169,11 @@ function updateLineupEligibility() {
   return !reason;
 }
 
+function stainOfSinIconMarkup(teamId) {
+  const stained = (state.raceCenter.stainOfSinTeamIds || state.stainOfSinTeamIds || []).includes(teamId);
+  return stained ? ' <span class="stain-of-sin" role="img" aria-label="Stain of Sin" title="Stain of Sin"></span>' : "";
+}
+
 function renderLeague() {
   const pointsByTeam = new Map(
     state.raceCenter.championship.map((standing) => [standing.teamId, standing.points]),
@@ -2180,11 +2185,10 @@ function renderLeague() {
     const franchisePoints = totals.franchisePoints ?? points;
     const titles = state.raceCenter.teamChampionshipWins?.[team.id] || 0;
     const pitCoachName = state.pitCoaches?.[team.id]?.coachName || "";
-    const stained = (state.raceCenter.stainOfSinTeamIds || state.stainOfSinTeamIds || []).includes(team.id);
     return `
       <article class="league-card" style="--team-color:${team.color}">
         <span class="code">${escapeHtml(team.short)}</span>
-        <h3>${escapeHtml(team.name)}${stained ? ` <span class="stain-of-sin">Stain of Sin</span>` : ""}</h3>
+        <h3>${escapeHtml(team.name)}${stainOfSinIconMarkup(team.id)}</h3>
         ${pitCoachName ? `<p class="league-pit-coach"><span>Pit Coach</span><strong>${escapeHtml(pitCoachName)}</strong></p>` : ""}
         <div class="league-team-record">
           <span><strong>${pointsLabel(points)}</strong> Season points</span>
@@ -2193,6 +2197,8 @@ function renderLeague() {
           <span><strong>${totals.goldMedals || 0}</strong> Gold medals</span>
           <span><strong>${totals.silverMedals || 0}</strong> Silver medals</span>
           <span><strong>${totals.bronzeMedals || 0}</strong> Bronze medals</span>
+          <span><strong>${totals.stainsOfSin || 0}</strong> Stains of Sin</span>
+          <span><strong>${totals.mvds || 0}</strong> MVDs</span>
         </div>
         <div class="league-roster">
           <span class="card-label">Current drivers</span>
