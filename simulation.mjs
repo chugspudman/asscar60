@@ -99,6 +99,7 @@ const STRANGE_EFFECT_SUMMARIES = [
     "Control, Overtaking, and Stamina maxed this stint; must recover next race; Given The Mark of The Speed God permanently",
   ],
   ["comes to a dead stop.", "Driver DNFs; No points"],
+  ["time serving The Lord of Laps.", "Control, Overtaking, and Stamina set to 3 for the rest of this stint"],
 ];
 
 export function appendStrangeEffectSummary(message) {
@@ -183,7 +184,7 @@ function applySpeedMadness(entry, driver) {
   bonuses.stamina = Math.max(bonuses.stamina || 0, 10 - driver.stamina);
 }
 
-function chooseStrangeEffect(effects, entry, driver, random) {
+export function chooseStrangeEffect(effects, entry, driver, random) {
   const allowedEffects = driver?.speed_mark
     ? effects.filter((effect) => effect.tone !== "bad")
     : effects;
@@ -191,10 +192,13 @@ function chooseStrangeEffect(effects, entry, driver, random) {
   if (!entry.pitCoach?.stainOfSin) {
     return allowedEffects[Math.floor(random() * allowedEffects.length)];
   }
-  const weighted = allowedEffects.flatMap((effect) => (
-    effect.tone === "bad" ? [effect, effect] : [effect]
-  ));
-  return weighted[Math.floor(random() * weighted.length)];
+  const goodEffects = allowedEffects.filter((effect) => effect.tone === "good");
+  const badEffects = allowedEffects.filter((effect) => effect.tone === "bad");
+  if (!goodEffects.length || !badEffects.length) {
+    return allowedEffects[Math.floor(random() * allowedEffects.length)];
+  }
+  const pool = random() < 1 / 6 ? goodEffects : badEffects;
+  return pool[Math.floor(random() * pool.length)];
 }
 
 function mergeRaceOrder(currentOrder, activeOrder) {
@@ -645,9 +649,13 @@ const ALWAYS_STRANGE_EFFECTS = [
 const CHURNING_EFFECTS = [
   { tone: "good", special: "position", message: (car) => `Behold the Churning! ${car} is favored by Velocitus and given a burst of speed!` },
   { tone: "good", special: "reset", message: (car, driver) => `Behold the Churning! The Stewards, with infinite beneficence, grace ${driver.name} and ${car} with holy acts!` },
-  { tone: "bad", special: "mark", message: (_, driver) => {
+  { tone: "good", special: "mark", message: (_, driver) => {
     const pronouns = pronounForms(driver);
-    return `The Churning is nigh! ${driver.name} is scorched by the divinity of The Speed God. ${pronouns.subjectCapitalized} is branded by The Mark of The Speed God and gets SPEED MADNESS!`;
+    return `Behold the Churning! ${driver.name} is scorched by the divinity of The Speed God. ${pronouns.subjectCapitalized} is branded by The Mark of The Speed God and gets SPEED MADNESS!`;
+  } },
+  { tone: "bad", special: "forsake-speed", message: (_, driver) => {
+    const pronouns = pronounForms(driver);
+    return `The Churning is Nigh! ${driver.name} is besought by The Decelerator and forgets all ${pronouns.subject} ${pronouns.pluralVerb ? "have" : "has"} learned in ${pronouns.possessive} time serving The Lord of Laps.`;
   } },
   { tone: "bad", special: "dnf", message: (_, driver) => {
     const pronouns = pronounForms(driver);
@@ -658,6 +666,13 @@ const CHURNING_EFFECTS = [
 function driverBonuses(entry, driverId) {
   if (!entry.driverBonuses.has(driverId)) entry.driverBonuses.set(driverId, {});
   return entry.driverBonuses.get(driverId);
+}
+
+function effectiveDriverStat(entry, driver, stat, includeFatigue = true) {
+  const bonuses = driverBonuses(entry, driver.id);
+  if (bonuses.forsakenSpeed) return 3;
+  const fatigue = includeFatigue ? entry.driverFatigue.get(driver.id) || 0 : 0;
+  return clamp(driver[stat] + (bonuses[stat] || 0) - fatigue, 1, 10);
 }
 
 function updateFatigue(entry, activeDriver, elapsedSeconds) {
@@ -671,8 +686,7 @@ function updateFatigue(entry, activeDriver, elapsedSeconds) {
       continue;
     }
     const current = entry.driverFatigue.get(driver.id) || 0;
-    const bonuses = driverBonuses(entry, driver.id);
-    const effectiveStamina = clamp(driver.stamina + (bonuses.stamina || 0), 1, 10);
+    const effectiveStamina = effectiveDriverStat(entry, driver, "stamina", false);
     const loss = driverDegradationPerTenMinutes(effectiveStamina)
       * (elapsedSeconds / 600);
     entry.driverFatigue.set(
@@ -688,8 +702,8 @@ function lapCandidate(entry, lap, course, condition, random) {
   const driver = driverForLap(entry, lap);
   const bonuses = driverBonuses(entry, driver.id);
   const driverFatigue = entry.driverFatigue.get(driver.id) || 0;
-  const effectiveControl = clamp(driver.control + (bonuses.control || 0) - driverFatigue, 1, 10);
-  const effectiveOvertaking = clamp(driver.overtaking + (bonuses.overtaking || 0) - driverFatigue, 1, 10);
+  const effectiveControl = effectiveDriverStat(entry, driver, "control");
+  const effectiveOvertaking = effectiveDriverStat(entry, driver, "overtaking");
   const effectiveSpeed = clamp(entry.vehicle.speed + (entry.carBonuses.speed || 0) - entry.carWear, 1, 10);
   const effectiveHandling = clamp(entry.vehicle.handling + (entry.carBonuses.handling || 0) - entry.carWear, 1, 10);
   const effectivePace = clamp(driver.pace + (bonuses.pace || 0) - driverFatigue, 1, 10);
@@ -777,6 +791,12 @@ function applyStrangeEffect(candidate, order) {
   if (effect.special === "reset") {
     entry.carWear = 0;
     entry.driverFatigue.set(driver.id, 0);
+    return;
+  }
+  if (effect.special === "forsake-speed") {
+    driverBonuses(entry, driver.id).forsakenSpeed = true;
+    candidate.effectiveControl = 3;
+    candidate.effectiveOvertaking = 3;
     return;
   }
   if (effect.special === "mark") {
@@ -1031,7 +1051,6 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
     const part = Math.min(TOTAL_LAPS, Math.floor(entry.position) + 1);
     const driver = driverForLap(entry, part);
     const bonuses = driverBonuses(entry, driver.id);
-    const driverFatigue = entry.driverFatigue.get(driver.id) || 0;
     const speedBonus = (entry.carBonuses.speed || 0) + coachSpeedBonus(entry, driver);
     const handlingBonus = (entry.carBonuses.handling || 0) + coachHandlingBonus(entry);
     return {
@@ -1039,8 +1058,8 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
       driver,
       role: roleForLap(entry, part),
       bonuses,
-      control: clamp(driver.control + (bonuses.control || 0) - driverFatigue, 1, 10),
-      overtaking: clamp(driver.overtaking + (bonuses.overtaking || 0) - driverFatigue, 1, 10),
+      control: effectiveDriverStat(entry, driver, "control"),
+      overtaking: effectiveDriverStat(entry, driver, "overtaking"),
       speed: clamp(entry.vehicle.speed + speedBonus - carWearForStat(entry, "speed"), 1, 10),
       handling: clamp(entry.vehicle.handling + handlingBonus - carWearForStat(entry, "handling"), 1, 10),
       severityBonus: bonuses.severity || 0,
@@ -1431,6 +1450,8 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
           applySpeedMadness(entry, driver);
           message.markGranted = true;
           message.speedMadnessRecoveryRacerId = driver.id;
+        } else if (effect.special === "forsake-speed") {
+          driverBonuses(entry, driver.id).forsakenSpeed = true;
         } else if (effect.special === "dnf") {
           entry.status = "dnf";
           entry.dnfTime = eventTime;
