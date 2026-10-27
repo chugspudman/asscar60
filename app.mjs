@@ -2023,7 +2023,7 @@ function renderLineupEditor() {
   if (raceLockReason) state.relayPlanEditing = false;
   const savedCompuzoidLimit = selections.some((selection) => (
     racerById(selection?.driverId)?.compuzoid
-    && Number(selection?.laps || 0) > 20
+    && Number(selection?.laps || 0) > managedCompuzoidStintLimit()
   ));
   const savedUnavailableDriver = selections.some((selection) => relayDriverUnavailableReason(selection?.driverId));
   if ((savedCompuzoidLimit || savedUnavailableDriver) && !raceLockReason) state.relayPlanEditing = true;
@@ -2097,7 +2097,7 @@ function updateStintRanges() {
       const laps = Number(input.value) || 0;
       total += laps;
       unavailableDriver ||= Boolean(relayDriverUnavailableReason(select?.value));
-      if (racerById(select?.value)?.compuzoid && laps > 20) {
+      if (racerById(select?.value)?.compuzoid && laps > managedCompuzoidStintLimit()) {
         compuzoidLimit = true;
       }
     }
@@ -2119,6 +2119,10 @@ function relayDriverUnavailableReason(driverId) {
   return state.raceCenter.unavailableRelayDrivers?.[driverId] || "";
 }
 
+function managedCompuzoidStintLimit() {
+  return state.compuzoidStintLimits?.[managedTeamId()] || 20;
+}
+
 function lineupIneligibilityReason(assignments) {
   const unavailableAssignment = assignments.find((assignment) => relayDriverUnavailableReason(assignment.driverId));
   if (unavailableAssignment) {
@@ -2132,11 +2136,11 @@ function lineupIneligibilityReason(assignments) {
   }
   const compuzoidLimitAssignment = assignments.find((assignment) => (
     racerById(assignment.driverId)?.compuzoid
-    && assignment.laps > 20
+    && assignment.laps > managedCompuzoidStintLimit()
   ));
   if (compuzoidLimitAssignment) {
     const driver = racerById(compuzoidLimitAssignment.driverId);
-    return `${driver?.name || "That driver"} is a compuzoid. Their maximum stint length is 20 laps.`;
+    return `${driver?.name || "That driver"} is a compuzoid. Their maximum stint length is ${managedCompuzoidStintLimit()} laps.`;
   }
   if (!state.relayPlanEditing) return "";
   const totals = [0, 1].map((carIndex) => assignments
@@ -2991,6 +2995,10 @@ function renderRookieVeteranRelease() {
 
 function renderDraft() {
   const draft = state.draft;
+  const specialtyList = document.querySelector("#rules-pit-coach-specialties");
+  if (specialtyList && draft.initiation?.pitCoachOptions?.length) {
+    specialtyList.innerHTML = draft.initiation.pitCoachOptions.map((option) => `<li>${escapeHtml(option.description)}</li>`).join("");
+  }
   const hasDraft = draft.status !== "not_started";
   const draftComplete = draft.status === "complete";
   const season = draft.initiation?.season || state.raceCenter?.season || 1;
@@ -3682,6 +3690,7 @@ async function loadLeagueState() {
   state.carNames = { ...defaultCarNamesByTeam, ...saved.carNames };
   state.cars = saved.cars || {};
   state.pitCoaches = saved.pitCoaches || {};
+  state.compuzoidStintLimits = saved.compuzoidStintLimits || {};
   state.stainOfSinTeamIds = saved.stainOfSinTeamIds || [];
   applyTeamTheme();
 }

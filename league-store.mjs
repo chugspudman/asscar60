@@ -5,6 +5,7 @@ import {
 } from "./league-data.mjs";
 import { generateRacerNames } from "./racer-names.mjs";
 import { COURSES } from "./courses.mjs";
+import { SEASON_TWO_PIT_COACH_SPECIALTIES, compuzoidStintLimit } from "./pit-coaches.mjs";
 import {
   appendStrangeEffectSummary, basePartDuration, personalizeRaceFeedMessage,
   formatRaceTime, selectRaceCondition, simulateRace, TOTAL_LAPS,
@@ -1187,7 +1188,7 @@ function snakeTeamId(pickIndex, order = teams.map((team) => team.id)) {
   return order[teamIndex];
 }
 
-function validatePlan(team, roster, plan) {
+function validatePlan(team, roster, plan, compuzoidLimit = 20) {
   if (!plan || !Array.isArray(plan.lineup) || plan.lineup.length !== 6) {
     throw new Error("A relay plan must contain six stint assignments.");
   }
@@ -1212,9 +1213,9 @@ function validatePlan(team, roster, plan) {
   const rosterById = new Map(roster.map((driver) => [driver.id, driver]));
   if (lineup.some((assignment) => (
     rosterById.get(assignment.driverId)?.compuzoid
-    && assignment.laps > 20
+    && assignment.laps > compuzoidLimit
   ))) {
-    throw new Error("Compuzoids cannot race for longer than 20 laps.");
+    throw new Error(`Compuzoids cannot race for longer than ${compuzoidLimit} laps.`);
   }
 
   for (let carIndex = 0; carIndex < 2; carIndex += 1) {
@@ -1797,6 +1798,13 @@ export function createLeagueStore(path = ":memory:") {
       points INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       PRIMARY KEY (season, team_id, adjustment_key)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS pit_coach_extra_trainings (
+      season INTEGER NOT NULL,
+      racer_id TEXT NOT NULL REFERENCES racers(id),
+      stat TEXT NOT NULL,
+      PRIMARY KEY (season, racer_id, stat)
     ) STRICT;
 
     CREATE TABLE IF NOT EXISTS season_history (
@@ -3511,6 +3519,33 @@ export function createLeagueStore(path = ":memory:") {
     }
   }
 
+  function pitCoachOptionsForSeason(season) {
+    return season >= 2 ? SEASON_TWO_PIT_COACH_SPECIALTIES : PIT_COACH_SPECIALTIES;
+  }
+
+  function pitCoachKeyForTeam(teamId, season = getActiveSeason()) {
+    const key = readPitCoachSelection.get(season, teamId)?.specialty_key;
+    return pitCoachOptionsForSeason(season).some((option) => option.key === key) ? key : null;
+  }
+
+  function extraCoachTrainingAvailable(racer, stat, teamId, season) {
+    return pitCoachKeyForTeam(teamId, season) === "season-2-specialty-5"
+      && racer.potential === 0 && racer[stat] < 10
+      && !database.prepare("SELECT 1 FROM pit_coach_extra_trainings WHERE season = ? AND racer_id = ? AND stat = ?").get(season, racer.id, stat);
+  }
+
+  function applyFirstRookieCoachBonus(teamId, racerId, season) {
+    if (pitCoachKeyForTeam(teamId, season) !== "season-2-specialty-3") return;
+    if (readRookieDraftPicks.all(season).filter((pick) => pick.team_id === teamId).length !== 1) return;
+    const racer = findSignedRacerFull.get(racerId);
+    for (const { stat, remaining } of readGrowthRows.all(racerId)) {
+      if (!TRAINABLE_STATS.includes(stat)) continue;
+      database.prepare(`UPDATE racers SET ${stat} = ? WHERE id = ?`).run(Math.min(10, racer[stat] + remaining), racerId);
+      updateGrowthRemaining.run(0, racerId, stat);
+    }
+    setRacerPotential.run(0, racerId);
+  }
+
   function ensureUpgradeWeek(week = 1) {
     if (!readUpgradeWeek.get(week)) {
       const random = seededRandom(hashText(`upgrade-week:${week}`));
@@ -3551,19 +3586,25 @@ export function createLeagueStore(path = ":memory:") {
 
   function applyPendingDevelopmentWeek(week, appliedAt = new Date().toISOString()) {
     for (const choice of readPendingUpgradeChoices.all(week)) {
-      const racer = findRosterRacer.get(choice.racer_id);
+      const racer = findSignedRacerFull.get(choice.racer_id);
       if (!racer || racer.team_id !== choice.team_id) {
         markUpgradeChoiceApplied.run("capped", appliedAt, choice.week, choice.team_id, choice.slot);
         continue;
       }
       const growth = readGrowth.get(choice.racer_id, choice.stat);
       if (!growth) throw new Error("Racer growth data is unavailable.");
-      const result = growth.remaining > 0 ? "improved" : "capped";
+      const season = developmentSeasonForWeek(week);
+      const extraTraining = extraCoachTrainingAvailable(racer, choice.stat, choice.team_id, season);
+      const result = racer[choice.stat] < 10 && (growth.remaining > 0 || extraTraining) ? "improved" : "capped";
       if (result === "improved") {
         database.prepare(`UPDATE racers SET ${choice.stat} = ${choice.stat} + 1 WHERE id = ?`)
           .run(choice.racer_id);
-        reduceGrowth.run(choice.racer_id, choice.stat);
-        reducePotential.run(choice.racer_id);
+        if (growth.remaining > 0) {
+          reduceGrowth.run(choice.racer_id, choice.stat);
+          reducePotential.run(choice.racer_id);
+        } else {
+          database.prepare("INSERT INTO pit_coach_extra_trainings (season, racer_id, stat) VALUES (?, ?, ?)").run(season, choice.racer_id, choice.stat);
+        }
       } else {
         revealCap.run(choice.racer_id, choice.stat);
       }
@@ -3572,9 +3613,13 @@ export function createLeagueStore(path = ":memory:") {
 
     for (const choice of readPendingCarUpgradeChoices.all(week)) {
       const car = readCar.get(choice.team_id, choice.car_index);
+      const other = readCar.get(choice.team_id, 1 - choice.car_index);
       if (car && car[choice.stat] < 10) {
         database.prepare(`UPDATE cars SET ${choice.stat} = ${choice.stat} + 1
           WHERE team_id = ? AND car_index = ?`).run(choice.team_id, choice.car_index);
+        if (other && car.speed < other.speed && pitCoachKeyForTeam(choice.team_id, developmentSeasonForWeek(week)) === "season-2-specialty-1") {
+          database.prepare("UPDATE cars SET durability = MIN(10, durability + 1) WHERE team_id = ? AND car_index = ?").run(choice.team_id, 1 - choice.car_index);
+        }
       }
       markCarUpgradeChoiceApplied.run(appliedAt, choice.week, choice.team_id, choice.slot);
     }
@@ -3744,6 +3789,7 @@ export function createLeagueStore(path = ":memory:") {
           coachName: selection.coach_name,
         },
       ])),
+      compuzoidStintLimits: Object.fromEntries(teams.map((team) => [team.id, compuzoidStintLimit(pitCoachKeyForTeam(team.id))])),
       stainOfSinTeamIds: stainOfSinTeamIds(getActiveSeason()),
       brands: readBrands.all(),
       brandColors: BRAND_COLORS,
@@ -3887,7 +3933,7 @@ export function createLeagueStore(path = ":memory:") {
     }
     const team = teams.find((item) => item.id === teamId);
     if (!team) throw new Error("Unknown team.");
-    const plan = validatePlan(team, readRoster.all(teamId), input);
+    const plan = validatePlan(team, readRoster.all(teamId), input, compuzoidStintLimit(pitCoachKeyForTeam(teamId)));
     const suspended = new Set(activeSeasonEventEffects(getActiveSeason())
       .filter((effect) => (
         effect.team_id === teamId
@@ -3995,7 +4041,7 @@ export function createLeagueStore(path = ":memory:") {
         rookieRacerId: selection.rookie_retention_id,
       },
     ]));
-    const coachSelections = readPitCoachSelections.all(season);
+    const coachSelections = readPitCoachSelections.all(season).filter((selection) => pitCoachKeyForTeam(selection.team_id, season));
     const coachByTeam = Object.fromEntries(coachSelections.map((selection) => [
       selection.team_id,
       selection,
@@ -4029,7 +4075,7 @@ export function createLeagueStore(path = ":memory:") {
       coachRequired,
       coachCount: coachSelections.length,
       coachComplete: !coachRequired || coachSelections.length >= teams.length,
-      pitCoachOptions: PIT_COACH_SPECIALTIES,
+      pitCoachOptions: pitCoachOptionsForSeason(season),
       pitCoachSelection: session.teamId && coachByTeam[session.teamId]
         ? {
           specialtyKey: coachByTeam[session.teamId].specialty_key,
@@ -4332,7 +4378,7 @@ export function createLeagueStore(path = ":memory:") {
 
   function pitCoachDescriptionForTeam(teamId, season) {
     const selection = readPitCoachSelections.all(season).find((coach) => coach.team_id === teamId);
-    const specialty = PIT_COACH_SPECIALTIES.find((item) => item.key === selection?.specialty_key);
+    const specialty = pitCoachOptionsForSeason(season).find((item) => item.key === selection?.specialty_key);
     return {
       name: selection?.coach_name || "their Pit Coach",
       specialty: specialty?.description || "generic effect",
@@ -5163,7 +5209,7 @@ export function createLeagueStore(path = ":memory:") {
       });
       if (!retainersComplete) return false;
     }
-    if (readPitCoachSelections.all(season).length < teams.length) return false;
+    if (teams.some((team) => !pitCoachKeyForTeam(team.id, season))) return false;
     return true;
   }
 
@@ -5360,6 +5406,7 @@ export function createLeagueStore(path = ":memory:") {
         pickedAt,
       );
       assignRacer.run(teamId, racerId);
+      applyFirstRookieCoachBonus(teamId, racerId, season);
       if (state.current_pick >= order.length) {
         beginRookieReleases.run(season);
       } else {
@@ -5738,7 +5785,7 @@ export function createLeagueStore(path = ":memory:") {
     if (readDraftState.get()) return getDraft({ teamId });
     if (!teams.some((team) => team.id === teamId)) throw new Error("Unknown team.");
     const season = getActiveSeason();
-    const specialty = PIT_COACH_SPECIALTIES.find((option) => option.key === specialtyKey);
+    const specialty = pitCoachOptionsForSeason(season).find((option) => option.key === specialtyKey);
     if (!specialty) throw new Error("Unknown Pit Coach specialty.");
     const existing = readPitCoachSelection.get(season, teamId);
     const currentSeasonCoachNames = readPitCoachSelections.all(season)
@@ -5868,7 +5915,7 @@ export function createLeagueStore(path = ":memory:") {
           throw new Error("All teams must select retainers before the opening draft can begin.");
         }
       }
-      if (readPitCoachSelections.all(season).length < teams.length) {
+      if (teams.some((team) => !pitCoachKeyForTeam(team.id, season))) {
         throw new Error("All teams must select Pit Coach specialties before the opening draft can begin.");
       }
       for (const team of teams) {
@@ -6159,12 +6206,22 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function applyVeteranForRookieCoachBonus(teamId, sentRacers, receivedRacers) {
-    if (readPitCoachSelection.get(getActiveSeason(), teamId)?.specialty_key !== "specialty-4") return;
+    if (pitCoachKeyForTeam(teamId) !== "specialty-4") return;
     const tradedVeteran = sentRacers.some((racer) => racer && !isRookieOrigin(racer));
     if (!tradedVeteran) return;
     for (const racer of receivedRacers.filter((item) => item && isRookieOrigin(item))) {
       increaseRacerControl.run(racer.id);
     }
+  }
+
+  function applyTradePointsCoachBonus(teamId, otherTeamId, now) {
+    const season = getActiveSeason();
+    if (pitCoachKeyForTeam(teamId, season) !== "season-2-specialty-6") return;
+    const key = `coach-trade:${teamId}:${otherTeamId}`;
+    if (database.prepare("SELECT 1 FROM team_point_adjustments WHERE season = ? AND team_id = ? AND adjustment_key = ?").get(season, teamId, key)) return;
+    const insert = database.prepare("INSERT INTO team_point_adjustments (season, team_id, adjustment_key, points, created_at) VALUES (?, ?, ?, ?, ?)");
+    insert.run(season, teamId, key, 10, now);
+    insert.run(season, otherTeamId, key, 15, now);
   }
 
   function transferAcceptedTradeItems(fromTeamId, toTeamId, items, tradeOfferId, now) {
@@ -6734,6 +6791,8 @@ export function createLeagueStore(path = ":memory:") {
       for (const racerId of requestedIds) assignRacer.run(offer.offering_team_id, racerId);
       applyVeteranForRookieCoachBonus(offer.offering_team_id, offered, requested);
       applyVeteranForRookieCoachBonus(offer.receiving_team_id, requested, offered);
+      applyTradePointsCoachBonus(offer.offering_team_id, offer.receiving_team_id, now);
+      applyTradePointsCoachBonus(offer.receiving_team_id, offer.offering_team_id, now);
       transferAcceptedTradeItems(
         offer.offering_team_id,
         offer.receiving_team_id,
@@ -7039,7 +7098,7 @@ export function createLeagueStore(path = ":memory:") {
     if (!sacrifices.length) return [];
     const coachByTeam = Object.fromEntries(readPitCoachSelections.all(priorSeason).map((selection) => [
       selection.team_id,
-      selection.specialty_key,
+      pitCoachKeyForTeam(selection.team_id, priorSeason),
     ]));
     const seasonRaces = readSeasonRacesForChampionship.all(priorSeason);
     const mvds = calculateSeasonChampionships(seasonRaces).mvds;
@@ -7289,17 +7348,15 @@ export function createLeagueStore(path = ":memory:") {
     return getRaceCenter(nextSeason);
   }
 
-  function pitCoachRaceContext(season) {
+  function pitCoachRaceContext(season, entries = []) {
     const stainedTeams = new Set(stainOfSinTeamIds(season));
-    const selections = Object.fromEntries(readPitCoachSelections.all(season).map((selection) => [
-      selection.team_id,
-      selection,
-    ]));
     return Object.fromEntries(teams.map((team) => {
       const roster = readRoster.all(team.id);
+      const relayDrivers = entries.filter((entry) => entry.teamId === team.id).flatMap((entry) => entry.stints.map((stint) => stint.driver));
       return [team.id, {
-        specialtyKey: selections[team.id]?.specialty_key || null,
+        specialtyKey: pitCoachKeyForTeam(team.id, season),
         noControlAbove8: roster.every((racer) => Number(racer.control) <= 8),
+        relayNoControlAbove8: relayDrivers.length > 0 && relayDrivers.every((racer) => Number(racer.control) <= 8),
         stainOfSin: stainedTeams.has(team.id),
       }];
     }));
@@ -7362,22 +7419,23 @@ export function createLeagueStore(path = ":memory:") {
     const relaySubstitutions = [];
     for (const team of teams) {
       const teamEntries = baseEntries.filter((entry) => entry.teamId === team.id);
+      const compuzoidLimit = compuzoidStintLimit(pitCoachKeyForTeam(team.id, season));
       const usedDriverIds = new Set(teamEntries.flatMap((entry) => entry.stints.map((stint) => stint.driver.id)));
       const invalidStints = teamEntries.flatMap((entry, carIndex) => entry.stints.map((stint, stintIndex) => ({
         entry, carIndex, stint, stintIndex, laps: stint.end - stint.start + 1,
       }))).filter(({ stint, laps }) => (
-        unavailableEffectsByRacer.has(stint.driver.id) || (stint.driver.compuzoid && laps > 20)
+        unavailableEffectsByRacer.has(stint.driver.id) || (stint.driver.compuzoid && laps > compuzoidLimit)
       )).sort((a, b) => b.laps - a.laps);
       for (const { entry, carIndex, stint, stintIndex, laps } of invalidStints) {
         const originalDriver = stint.driver;
         const effect = unavailableEffectsByRacer.get(originalDriver.id);
         const reason = effect?.type === "speed_madness_recovery"
           ? "is recovering from Speed Madness"
-          : effect ? "is suspended" : "cannot cover a stint longer than 20 laps as a compuzoid";
+          : effect ? "is suspended" : `cannot cover a stint longer than ${compuzoidLimit} laps as a compuzoid`;
         const replacement = [...(league.rosters[team.id] || [])].filter((driver) => (
           !usedDriverIds.has(driver.id)
           && !unavailableEffectsByRacer.has(driver.id)
-          && !(driver.compuzoid && laps > 20)
+          && !(driver.compuzoid && laps > compuzoidLimit)
         )).sort((a, b) => (
           (b.control + b.overtaking + b.stamina) - (a.control + a.overtaking + a.stamina)
           || a.id.localeCompare(b.id)
@@ -7414,7 +7472,7 @@ export function createLeagueStore(path = ":memory:") {
     const race = simulateRace(entries, seed, {
       courseName,
       condition,
-      pitCoachesByTeam: pitCoachRaceContext(season),
+      pitCoachesByTeam: pitCoachRaceContext(season, baseEntries),
       preRaceSpeedMadnessRacerIds: speedMadnessRacerIds,
       forcedDnfTeamIds: rookieReleaseDnfTeamIds,
       forcedDnfEntryIds: [...forcedDnfEntryIds],
@@ -7679,6 +7737,7 @@ export function createLeagueStore(path = ":memory:") {
       clearDraftPicks.run();
       clearDraftState.run();
       database.prepare("DELETE FROM opening_draft_classes WHERE season = ?").run(season);
+      database.prepare("DELETE FROM pit_coach_extra_trainings WHERE season = ?").run(season);
       clearDraftInitiationVotes.run(season);
       clearDraftRetentionSelections.run(season);
       clearPitCoachSelections.run(season);
@@ -7731,7 +7790,7 @@ export function createLeagueStore(path = ":memory:") {
       if (!Number.isInteger(training.optionIndex) || training.optionIndex < 0 || training.optionIndex > 2) {
         throw new Error("Unknown weekly training option.");
       }
-      const racer = findRosterRacer.get(training.racerId);
+      const racer = findSignedRacerFull.get(training.racerId);
       if (!racer || racer.team_id !== teamId) {
         throw new Error("That racer is not on this team.");
       }
@@ -7745,7 +7804,7 @@ export function createLeagueStore(path = ":memory:") {
         ...training,
         stat,
         racer,
-        result: growth.remaining > 0 ? "improved" : "capped",
+        result: racer[stat] < 10 && (growth.remaining > 0 || extraCoachTrainingAvailable(racer, stat, teamId, developmentSeasonForWeek(week))) ? "improved" : "capped",
       };
     });
 

@@ -125,8 +125,15 @@ function roleForLap(entry, lap) {
   return ["Opener", "Bridge", "Closer"][index] || "Bridge";
 }
 
+const COACH_SPECIALTY_ALIASES = {
+  "specialty-2": "season-2-specialty-10",
+  "specialty-6": "season-2-specialty-7",
+  "specialty-9": "season-2-specialty-11",
+};
+
 function hasCoachSpecialty(entry, specialtyKey) {
-  return entry.pitCoach?.specialtyKey === specialtyKey;
+  const selected = entry.pitCoach?.specialtyKey;
+  return selected === specialtyKey || Boolean(selected && COACH_SPECIALTY_ALIASES[specialtyKey] === selected);
 }
 
 function driverPronounsAre(driver, pronouns) {
@@ -154,10 +161,12 @@ function coachSpeedBonus(entry, driver) {
   let bonus = 0;
   if (hasCoachSpecialty(entry, "specialty-1") && driverPronounsAre(driver, "They/Them")) bonus += 1;
   if (hasCoachSpecialty(entry, "specialty-2") && driverUsesItPronouns(driver)) bonus += 1;
+  if (hasCoachSpecialty(entry, "season-2-specialty-9") && [driver.control, driver.overtaking, driver.stamina].every((stat) => Number(stat) % 2 === 0)) bonus += 1;
   return bonus;
 }
 
 function coachHandlingBonus(entry) {
+  if (hasCoachSpecialty(entry, "season-2-specialty-2") && entry.pitCoach?.relayNoControlAbove8) return 2;
   return hasCoachSpecialty(entry, "specialty-12") && entry.pitCoach?.noControlAbove8 ? 2 : 0;
 }
 
@@ -171,6 +180,7 @@ function carWearForStat(entry, stat) {
 }
 
 function coachCornerMishapPenalty(entry, stats, penalty) {
+  if (hasCoachSpecialty(entry, "season-2-specialty-4") && stats.role === "Bridge") return Math.min(1, penalty);
   if (hasCoachSpecialty(entry, "specialty-5") && stats.role === "Bridge") {
     return Math.max(0, penalty - 1);
   }
@@ -1372,14 +1382,15 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
             defender.penaltyRemaining += 1;
           }
           if (random() < 1 / 20) {
-            defender.penaltyRemaining += 3;
+            const penalty = hasCoachSpecialty(defender, "season-2-specialty-4") && defenderStats.role === "Bridge" ? 1 : 3;
+            defender.penaltyRemaining += penalty;
             events.push({
               time: eventTime + 0.01,
               type: "incident",
               entryId: defender.id,
               ...positionMeta(defenderEventPosition()),
               standings: snapshotLivePositions(racers, eventTime + 0.01),
-              message: `${defenderStats.driver.name} attempted to deny the overtake but suffered a mishap, losing 3 seconds.`,
+              message: `${defenderStats.driver.name} attempted to deny the overtake but suffered a mishap, losing ${penalty} seconds.`,
               category: "event",
             });
           }
@@ -1403,14 +1414,15 @@ export function simulateRace(entries, seed = "opening-bell", options = {}) {
             attacker.penaltyRemaining += 1;
           }
           if (random() < 1 / 10) {
-            attacker.penaltyRemaining += 3;
+            const penalty = hasCoachSpecialty(attacker, "season-2-specialty-4") && attackingStats.role === "Bridge" ? 1 : 3;
+            attacker.penaltyRemaining += penalty;
             events.push({
               time: eventTime + 0.01,
               type: "incident",
               entryId: attacker.id,
               ...positionMeta(attackerEventPosition()),
               standings: snapshotLivePositions(racers, eventTime + 0.01),
-              message: `${attackingStats.driver.name} has a mishap after the denied overtake and loses 3 seconds.`,
+              message: `${attackingStats.driver.name} has a mishap after the denied overtake and loses ${penalty} seconds.`,
               category: "event",
             });
           }
