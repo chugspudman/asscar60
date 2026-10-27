@@ -1454,6 +1454,14 @@ export function createLeagueStore(path = ":memory:") {
       picked_at TEXT NOT NULL
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS opening_draft_classes (
+      season INTEGER PRIMARY KEY,
+      pool_size INTEGER NOT NULL,
+      seed INTEGER NOT NULL,
+      racer_ids_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS draft_initiation_votes (
       season INTEGER NOT NULL,
       team_id TEXT NOT NULL,
@@ -2328,6 +2336,8 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const readAllRacerNames = database.prepare("SELECT name FROM racers");
   const readDraftState = database.prepare("SELECT * FROM draft_state WHERE id = 1");
+  const readOpeningDraftClass = database.prepare("SELECT * FROM opening_draft_classes WHERE season = ?");
+  const readOpeningDraftClassRacers = database.prepare("SELECT * FROM racers WHERE id IN (SELECT value FROM json_each(?)) ORDER BY name");
   const readDraftPicks = database.prepare(`
     SELECT draft_picks.pick_number, draft_picks.round_number,
            draft_picks.team_id, draft_picks.racer_id,
@@ -4028,9 +4038,26 @@ export function createLeagueStore(path = ":memory:") {
         }
         : null,
     };
-    if (!draft) return {
-      status: "not_started", picks: [], pool: [], initiation,
-    };
+    if (!draft) {
+      if (season > 1 && initiation.retentionComplete && !readOpeningDraftClass.get(season)) {
+        database.exec("BEGIN IMMEDIATE");
+        try {
+          generateOpeningDraftClass(60, Date.now());
+          database.exec("COMMIT");
+        } catch (error) {
+          database.exec("ROLLBACK");
+          throw error;
+        }
+      }
+      const draftClass = readOpeningDraftClass.get(season);
+      const pool = draftClass ? readOpeningDraftClassRacers.all(draftClass.racer_ids_json).map(publicRacer)
+        : season === 1 ? readDraftPool.all().map(publicRacer) : [];
+      return {
+        status: "not_started", picks: [], initiation,
+        classGenerated: Boolean(draftClass) || pool.length > 0, poolSize: draftClass?.pool_size || 60,
+        pool,
+      };
+    }
     const picks = readDraftPicks.all();
     const totalPicks = draft.rounds * teams.length;
     return {
@@ -5528,6 +5555,42 @@ export function createLeagueStore(path = ":memory:") {
     return getRookieDraft(season, now);
   }
 
+  function generateOpeningDraftClass(poolSize, seed) {
+    const season = getActiveSeason();
+    const existing = readOpeningDraftClass.get(season);
+    if (existing) return existing;
+    if (!Number.isInteger(poolSize) || poolSize < openingDraftRoundsForSeason(season) * teams.length) {
+      throw new Error("The draft pool must contain at least one racer per pick.");
+    }
+    const selections = readDraftRetentionSelections.all(season);
+    const ids = [];
+    for (const team of teams) {
+      const selection = selections.find((item) => item.team_id === team.id);
+      validateOpeningDraftRetention(team.id, selection?.veteran_retention_id, selection?.rookie_retention_id, season);
+      ids.push(...readRoster.all(team.id)
+        .filter((racer) => racer.id !== selection.veteran_retention_id && racer.id !== selection.rookie_retention_id)
+        .map((racer) => racer.id));
+    }
+    if (ids.length > poolSize) throw new Error("The returning roster is larger than the opening draft pool.");
+    const names = generateRacerNames(poolSize - ids.length, Number(seed), readAllRacerNames.all().map((row) => row.name));
+    const random = seededRandom(Number(seed));
+    for (const [index, name] of names.entries()) {
+      const rating = () => 4 + Math.floor(random() * 6);
+      const control = rating();
+      const overtaking = rating();
+      const stamina = rating();
+      const id = `draft-${season}-${Number(seed)}-${index + 1}`;
+      insertOrReactivateGeneratedRacer(id, name, 5, control, overtaking, stamina, 5, 5,
+        rollPotentialWithinHeadroom(random, [control, overtaking, stamina], 1, 5),
+        "Returns to the eternal search for speed.", pronounsForRacer(id), null, "draft");
+      ids.push(id);
+    }
+    ensureGrowthRows();
+    database.prepare("INSERT INTO opening_draft_classes (season, pool_size, seed, racer_ids_json, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(season, poolSize, Number(seed), JSON.stringify(ids), new Date().toISOString());
+    return readOpeningDraftClass.get(season);
+  }
+
   function startDraft({ rounds, poolSize = 60, seed = Date.now() } = {}) {
     if (readDraftState.get()) throw new Error("A draft already exists.");
     const season = getActiveSeason();
@@ -5554,6 +5617,11 @@ export function createLeagueStore(path = ":memory:") {
 
     database.exec("BEGIN IMMEDIATE");
     try {
+      if (season > 1) {
+        const draftClass = generateOpeningDraftClass(poolSize, seed);
+        poolSize = draftClass.pool_size;
+        seed = draftClass.seed;
+      }
       prepareFirstOpeningDraftPool();
       prepareOpeningDraftRosters(season);
       let returningRacerCount = countDraftPoolRacers.get().count;
@@ -5638,6 +5706,13 @@ export function createLeagueStore(path = ":memory:") {
     if (!teams.some((team) => team.id === teamId)) throw new Error("Unknown team.");
     const season = getActiveSeason();
     if (season <= 1) throw new Error("Retainers are only selected after the first season.");
+    const finalized = readDraftRetentionSelections.all(season).find((selection) => selection.team_id === teamId);
+    if (finalized) {
+      if (finalized.veteran_retention_id !== veteranRetentionId || finalized.rookie_retention_id !== rookieRetentionId) {
+        throw new Error("Your retainers have been finalized and cannot be changed.");
+      }
+      return maybeStartOpeningDraftAfterPrereqs({ poolSize, seed, session: { teamId } });
+    }
     const retention = validateOpeningDraftRetention(
       teamId,
       veteranRetentionId,
@@ -7603,6 +7678,7 @@ export function createLeagueStore(path = ":memory:") {
       deleteCarUpgradeWeeksForSeason.run(firstWeekKey, lastWeekKey);
       clearDraftPicks.run();
       clearDraftState.run();
+      database.prepare("DELETE FROM opening_draft_classes WHERE season = ?").run(season);
       clearDraftInitiationVotes.run(season);
       clearDraftRetentionSelections.run(season);
       clearPitCoachSelections.run(season);
@@ -7971,6 +8047,7 @@ export function createLeagueStore(path = ":memory:") {
     startupSeason > 1
     && countSeasonRaces.get(startupSeason).count === 0
     && !readDraftState.get()
+    && !readOpeningDraftClass.get(startupSeason)
     && countSignedRacers.get().count > 0
   ) {
     database.exec("BEGIN IMMEDIATE");

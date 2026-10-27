@@ -2882,11 +2882,16 @@ function renderAdminRetention() {
   ].join("");
   const hasOptions = retention.veterans.length > 0 && retention.rookies.length > 0;
   const readyToSave = hasOptions && elements.draftRetainVeteran.value && elements.draftRetainRookie.value;
-  elements.saveDraftRetention.disabled = !readyToSave;
-  elements.saveDraftRetention.textContent = complete ? "Update retainers" : "Save retainers";
+  elements.draftRetainVeteran.disabled = complete;
+  elements.draftRetainRookie.disabled = complete;
+  elements.saveDraftRetention.disabled = complete || !readyToSave;
+  elements.saveDraftRetention.textContent = complete ? "Retainers Finalized" : "Finalize Retainers";
+  if (complete && elements.draftRetentionMessage) {
+    elements.draftRetentionMessage.textContent = "Your retainer choices are finalized and cannot be changed.";
+  }
   if (elements.draftRetentionMessage && !elements.draftRetentionMessage.textContent) {
     elements.draftRetentionMessage.textContent = hasOptions
-      ? "The draft begins when every team saves retainers, saves a Pit Coach specialty, and votes."
+      ? "The draft class will be generated once every team has finalized its retainers."
       : "Your roster does not have eligible veteran and rookie retainers.";
   }
   updateDraftVoteAlertBadges();
@@ -2988,13 +2993,23 @@ function renderDraft() {
   const draft = state.draft;
   const hasDraft = draft.status !== "not_started";
   const draftComplete = draft.status === "complete";
-  const season = state.raceCenter?.season || 1;
+  const season = draft.initiation?.season || state.raceCenter?.season || 1;
   elements.draftEmpty.hidden = hasDraft;
-  elements.draftRoom.hidden = !hasDraft;
+  elements.draftRoom.hidden = false;
   if (!hasDraft) {
+    elements.draftStatus.hidden = true;
+    elements.draftPoolPanel.hidden = false;
+    elements.draftLayout.classList.add("history-only");
+    elements.draftHistory.closest("aside").hidden = true;
+    elements.draftSort.disabled = !draft.pool.length;
+    elements.draftPool.innerHTML = draft.pool.length
+      ? sortRacers(draft.pool, elements.draftSort.value).map((racer) => draftRacerMarkup(racer, true)).join("")
+      : `<p class="muted">Opening draft class for Season ${season} will be generated once all retainer choices have been finalized.</p>`;
     renderDraftInitiation();
     return;
   }
+  elements.draftHistory.closest("aside").hidden = false;
+  elements.draftSort.disabled = false;
 
   elements.draftStatus.hidden = draftComplete;
   elements.draftPoolPanel.hidden = draftComplete;
@@ -4617,7 +4632,7 @@ elements.startDraft.addEventListener("click", async () => {
 
 function updateRetentionSaveEligibility() {
   if (!elements.saveDraftRetention || elements.draftRetentionFields?.hidden) return;
-  elements.saveDraftRetention.disabled = !(
+  elements.saveDraftRetention.disabled = retentionStateForManagedTeam().complete || !(
     elements.draftRetainVeteran?.value
     && elements.draftRetainRookie?.value
   );
@@ -4631,7 +4646,7 @@ elements.draftRetainRookie?.addEventListener("change", updateRetentionSaveEligib
 
 elements.saveDraftRetention?.addEventListener("click", async () => {
   elements.saveDraftRetention.disabled = true;
-  elements.draftRetentionMessage.textContent = "Saving retainers...";
+  elements.draftRetentionMessage.textContent = "Finalizing retainers...";
   try {
     const response = await fetch("/api/draft/retention", {
       method: "POST",
@@ -4643,11 +4658,11 @@ elements.saveDraftRetention?.addEventListener("click", async () => {
       }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Could not save retainers.");
+    if (!response.ok) throw new Error(result.error || "Could not finalize retainers.");
     state.draft = result;
     elements.draftRetentionMessage.textContent = result.status === "active"
-      ? "All retainers are saved. The opening draft has begun."
-      : "Retainers saved.";
+      ? "All retainers are finalized. The opening draft has begun."
+      : "Retainers finalized. Your choices cannot be changed.";
     renderDraft();
     renderTransactions();
     renderRaceControls();
