@@ -3376,6 +3376,30 @@ export function createLeagueStore(path = ":memory:") {
   const readRuntime = database.prepare(`
     SELECT active_race_id, active_season FROM league_runtime WHERE id = 1
   `);
+  const readLocalRevision = database.prepare("SELECT total_changes() AS changes");
+  const readExternalRevision = database.prepare("PRAGMA data_version");
+  const sharedReadCache = new Map();
+
+  function databaseRevision() {
+    return `${readLocalRevision.get().changes}:${readExternalRevision.get().data_version}`;
+  }
+
+  function cachedRead(key, build, maxAgeMs = Infinity) {
+    // Invalidate on local mutations and commits made by another SQLite connection.
+    const revision = databaseRevision();
+    const cached = sharedReadCache.get(key);
+    if (cached?.revision === revision && Date.now() - cached.createdAt < maxAgeMs) return cached.value;
+    const value = build();
+    sharedReadCache.set(key, { value, revision: databaseRevision(), createdAt: Date.now() });
+    return value;
+  }
+
+  function completedCareerRaces() {
+    return cachedRead("completed-career-races", () => {
+      const activeRaceId = readRuntime.get().active_race_id;
+      return readAllRacesForCareer.all().filter((race) => race.id !== activeRaceId);
+    });
+  }
   const setActiveRace = database.prepare(`
     UPDATE league_runtime SET active_race_id = ?, updated_at = ? WHERE id = 1
   `);
@@ -4962,9 +4986,12 @@ export function createLeagueStore(path = ":memory:") {
   function maintainSeasonEvents(season = getActiveSeason(), now = new Date()) {
     const draft = readDraftState.get();
     if (!draft?.started_at || draft.status !== "complete") return;
+    const pendingDates = seasonEventDateKeysThrough(firstRaceAtForDraft(draft.started_at), now)
+      .filter((dateKey) => !readSeasonEventRoll.get(season, dateKey));
+    if (!pendingDates.length) return;
     const center = getRaceCenter(season);
     if (center.seasonComplete) return;
-    for (const dateKey of seasonEventDateKeysThrough(firstRaceAtForDraft(draft.started_at), now)) {
+    for (const dateKey of pendingDates) {
       createSeasonEventForDate(season, dateKey);
     }
   }
@@ -5009,8 +5036,7 @@ export function createLeagueStore(path = ":memory:") {
 
   function getInMemoriam() {
     const careerByRacer = new Map();
-    const allCareerRaces = readAllRacesForCareer.all()
-      .filter((race) => race.id !== readRuntime.get().active_race_id);
+    const allCareerRaces = completedCareerRaces();
     for (const lap of readCompletedRaceLaps.all()) {
       const career = careerByRacer.get(lap.racer_id) || { laps: 0, podiums: 0 };
       career.laps += 1;
@@ -6399,6 +6425,10 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function buildLapPerformanceSummaries() {
+    return cachedRead("lap-performance", computeLapPerformanceSummaries);
+  }
+
+  function computeLapPerformanceSummaries() {
     const currentRacerIds = new Set(readCurrentPerformanceRacerIds.all().map((row) => row.id));
     const rows = readCompletedRaceLaps.all()
       .filter((row) => currentRacerIds.has(row.racer_id));
@@ -6573,6 +6603,10 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function getRacerDirectory() {
+    return structuredClone(cachedRead("racer-directory", buildRacerDirectory, 1000));
+  }
+
+  function buildRacerDirectory() {
     const careerByRacer = new Map();
     const teamHistoryByRacer = new Map();
     const addTeamHistory = (racerId, teamId) => {
@@ -6584,8 +6618,7 @@ export function createLeagueStore(path = ":memory:") {
     const performance = buildLapPerformanceSummaries();
     const recentRaceByRacer = buildMostRecentRaceSummaries();
     const activeRaceId = readRuntime.get().active_race_id;
-    const allCareerRaces = readAllRacesForCareer.all()
-      .filter((race) => race.id !== activeRaceId);
+    const allCareerRaces = completedCareerRaces();
     for (const pick of readTeamHistoryDraftPicks.all()) {
       addTeamHistory(pick.racer_id, pick.team_id);
     }
@@ -7153,8 +7186,18 @@ export function createLeagueStore(path = ":memory:") {
     );
   }
 
+  function getRaceTiming(id) {
+    const race = database.prepare("SELECT id, duration, COALESCE(start_at, created_at) AS startAt FROM races WHERE id = ?").get(id);
+    if (!race) throw new Error("Race not found.");
+    return race;
+  }
+
   function getRaceCenter(season = 1) {
     applyDueDevelopment();
+    return structuredClone(cachedRead(`race-center:${season}`, () => buildRaceCenter(season), 1000));
+  }
+
+  function buildRaceCenter(season) {
     const seasonRacesRun = countSeasonRaces.get(season).count;
     const week = Math.min(WEEKS_PER_SEASON, Math.floor(seasonRacesRun / RACES_PER_WEEK) + 1);
     const racesRun = countWeekRaces.get(season, week).count;
@@ -7163,17 +7206,19 @@ export function createLeagueStore(path = ":memory:") {
       .filter((effect) => effect.type === "speed_madness_recovery")
       .map((effect) => effect.racer_id));
     if (activeRaceId !== null) {
-      const activeMadness = database.prepare(`
-        SELECT DISTINCT json_extract(event.value, '$.speedMadnessRecoveryRacerId') AS racer_id
+      const madnessEvents = cachedRead(`race-madness:${activeRaceId}`, () => database.prepare(`
+        SELECT json_extract(event.value, '$.speedMadnessRecoveryRacerId') AS racer_id,
+               json_extract(event.value, '$.time') AS time
         FROM races, json_each(races.events_json) AS event
         WHERE races.id = ?
           AND json_extract(event.value, '$.speedMadnessRecoveryRacerId') IS NOT NULL
-          AND json_extract(event.value, '$.time') <= (julianday(?) - julianday(COALESCE(races.start_at, races.created_at))) * 86400
-      `).all(activeRaceId, new Date().toISOString());
-      for (const event of activeMadness) speedMadnessRacerIds.add(event.racer_id);
+      `).all(activeRaceId));
+      const elapsed = (Date.now() - new Date(getRaceTiming(activeRaceId).startAt).getTime()) / 1000;
+      for (const event of madnessEvents) {
+        if (event.time !== null && event.time <= elapsed) speedMadnessRacerIds.add(event.racer_id);
+      }
     }
-    const completedAllRaces = readAllRacesForCareer.all()
-      .filter((race) => race.id !== activeRaceId);
+    const completedAllRaces = completedCareerRaces();
     const completedSeasonRaces = completedAllRaces
       .filter((race) => race.season === season);
     const raceScheduleComplete = completedSeasonRaces.length >= SEASON_RACES;
@@ -7283,7 +7328,7 @@ export function createLeagueStore(path = ":memory:") {
       seasonComplete,
       darkSacrifice,
       stainOfSinTeamIds: stainOfSinTeamIds(season),
-      races: readRaceSummaries.all().filter((race) => race.id !== activeRaceId),
+      races: cachedRead("race-summaries", () => readRaceSummaries.all()).filter((race) => race.id !== activeRaceId),
       championship: seasonChampionships.teams,
       mvdStandings: seasonChampionships.mvds,
       teamChampionshipWins: calculateTeamChampionshipWins(completedAllRaces, darkSacrificeBonusesForSeason),
@@ -8151,6 +8196,7 @@ export function createLeagueStore(path = ":memory:") {
     getRookieDraft,
     getDevelopment,
     getRace,
+    getRaceTiming,
     getRaceCenter,
     getSeasonHistory,
     getSeasonEvents,

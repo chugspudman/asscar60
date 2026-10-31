@@ -115,7 +115,7 @@ function runRaceScheduler() {
     store.maintainRookieDraft(season);
     const center = store.getRaceCenter(season);
     if (center.raceActive && center.activeRaceId) {
-      const race = store.getRace(center.activeRaceId);
+      const race = store.getRaceTiming(center.activeRaceId);
       const finishAt = new Date(race.startAt).getTime() + (race.duration * 1000);
       if (Date.now() >= finishAt) store.finishRace(race.id);
       return;

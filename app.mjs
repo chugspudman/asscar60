@@ -5658,6 +5658,21 @@ async function syncMediaEntries() {
   if (previousSignature !== nextSignature) renderMediaPage();
 }
 
+function nonOverlappingPoll(task) {
+  let pending = false;
+  return async () => {
+    if (pending) return;
+    pending = true;
+    try {
+      await task();
+    } catch (error) {
+      console.warn("Background league sync failed:", error);
+    } finally {
+      pending = false;
+    }
+  };
+}
+
 async function startApp() {
   if (appStarted) {
     showGameShell();
@@ -5671,13 +5686,13 @@ async function startApp() {
     await initialize();
     renderNewsTicker();
     stabilizeInitialLayout();
-    raceCenterInterval = setInterval(syncRaceCenter, 2_000);
-    draftInterval = setInterval(syncDraft, 2_000);
-    rookieDraftInterval = setInterval(syncRookieDraft, 2_000);
-    martyrInterval = setInterval(syncInitiationMartyr, 2_000);
-    darkSacrificeInterval = setInterval(syncDarkSacrifice, 2_000);
-    transactionsInterval = setInterval(syncTransactions, 15_000);
-    mediaInterval = setInterval(syncMediaEntries, 15_000);
+    raceCenterInterval = setInterval(nonOverlappingPoll(syncRaceCenter), 2_000);
+    draftInterval = setInterval(nonOverlappingPoll(syncDraft), 2_000);
+    rookieDraftInterval = setInterval(nonOverlappingPoll(syncRookieDraft), 2_000);
+    martyrInterval = setInterval(nonOverlappingPoll(syncInitiationMartyr), 2_000);
+    darkSacrificeInterval = setInterval(nonOverlappingPoll(syncDarkSacrifice), 2_000);
+    transactionsInterval = setInterval(nonOverlappingPoll(syncTransactions), 15_000);
+    mediaInterval = setInterval(nonOverlappingPoll(syncMediaEntries), 15_000);
     appStarted = true;
     void hydrateDeferredStartupData().catch((error) => {
       elements.saveMessage.textContent = error.message || "Some league data could not be loaded yet.";
