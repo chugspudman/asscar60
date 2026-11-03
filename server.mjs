@@ -8,7 +8,8 @@ import { createLeagueStore } from "./league-store.mjs";
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || "0.0.0.0";
-const store = createLeagueStore(process.env.ASSCAR_DB_PATH || join(root, "work", "asscar60.sqlite"));
+const maintenanceMode = process.env.ASSCAR_MAINTENANCE === "1";
+const store = maintenanceMode ? null : createLeagueStore(process.env.ASSCAR_DB_PATH || join(root, "work", "asscar60.sqlite"));
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -169,6 +170,15 @@ async function readJson(request) {
 const server = createServer(async (request, response) => {
   try {
     const requestedPath = new URL(request.url, `http://${request.headers.host}`).pathname;
+    if (maintenanceMode) {
+      if (request.method === "GET" && (requestedPath === "/" || requestedPath === "/health")) {
+        response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+        response.end("ASSCAR60 maintenance mode. The league database has not been opened.");
+      } else {
+        sendJson(response, 503, { error: "ASSCAR60 is in maintenance mode. League actions are disabled." });
+      }
+      return;
+    }
 
     if (request.method === "POST" && requestedPath === "/api/managers/register") {
       sendJson(response, 201, createSession(store.registerManager(await readJson(request)), request, response));
@@ -677,6 +687,10 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`ASSCAR60 running at http://${host}:${port}`);
+  if (maintenanceMode) {
+    console.log("Maintenance mode: SQLite and the race scheduler are disabled. No league data has been modified.");
+    return;
+  }
   runRaceScheduler();
   setInterval(runRaceScheduler, 1_000);
 });
