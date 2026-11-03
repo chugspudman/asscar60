@@ -542,7 +542,7 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
   width: 19px;
   height: 20px;
   display: inline-block;
-  background: url("/assets/speed-god-mark.png") 0 0 / 19px 20px no-repeat;
+  background: url("/assets/speed-god-mark.svg") 0 0 / 19px 20px no-repeat;
   image-rendering: pixelated;
   flex: 0 0 auto;
   align-self: center;
