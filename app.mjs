@@ -104,6 +104,8 @@ const state = {
   elapsed: 0,
   eventIndex: 0,
   running: false,
+  finishingRaceId: null,
+  raceCenterRequestVersion: 0,
   replay: false,
   idleFeedKey: null,
   draft: { status: "not_started", picks: [], pool: [] },
@@ -1273,49 +1275,64 @@ function showEvent(event) {
 }
 
 async function finishRace() {
-  clearInterval(state.timer);
-  state.running = false;
-  state.timer = null;
-  state.elapsed = state.race.duration;
-  elements.clock.textContent = formatRaceTime(state.elapsed);
-  elements.lap.textContent = "Official result";
-  renderRacePodium(state.race.finalStandings);
-  renderRaceProgress([], "Awaiting next grid");
-  if (!state.replay) {
-    try {
-      const response = await fetch(`/api/races/${state.race.id}/finish`, { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Could not close the race.");
-      state.raceCenter = result;
-      state.activeLeagueRace = null;
-      renderRaceProgress([], "Awaiting next grid");
-      await Promise.all([
-        loadLeagueState(),
-        loadDevelopment(),
-        loadRacerDirectory(),
-        loadRookieDraft(),
-        loadDarkSacrifice(),
-        loadInMemoriam(),
-      ]);
-      renderRaceArchive();
-      renderDevelopment();
-      renderLineupEditor();
-      renderTeamProfile();
-      renderLeague();
-      renderRacerDirectories();
-      renderRookieDraft();
-      renderInMemoriam();
-      renderDarkSacrificeChoice();
-      showDarkSacrificeResult({ automatic: true });
-      showSeasonCeremony({ automatic: true });
-    } catch (error) {
-      elements.developmentMessage.textContent = error.message;
+  const raceId = state.race.id;
+  if (state.finishingRaceId === raceId) return;
+  state.finishingRaceId = raceId;
+  try {
+    clearInterval(state.timer);
+    state.running = false;
+    state.timer = null;
+    state.elapsed = state.race.duration;
+    elements.clock.textContent = formatRaceTime(state.elapsed);
+    elements.lap.textContent = "Official result";
+    renderRacePodium(state.race.finalStandings);
+    renderRaceProgress([], "Awaiting next grid");
+    if (!state.replay) {
+      try {
+        const response = await fetch(`/api/races/${state.race.id}/finish`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not close the race.");
+        state.raceCenterRequestVersion = (state.raceCenterRequestVersion || 0) + 1;
+        state.raceCenter = result;
+        if (!result.raceActive) state.activeLeagueRace = null;
+        renderRaceArchive();
+        renderLeague();
+        renderRaceProgress([], "Awaiting next grid");
+        const refreshes = await Promise.allSettled([
+          loadLeagueState(),
+          loadDevelopment(),
+          loadRacerDirectory(),
+          loadRookieDraft(),
+          loadDarkSacrifice(),
+          loadInMemoriam(),
+        ]);
+        const failedRefresh = refreshes.find((refresh) => refresh.status === "rejected");
+        if (failedRefresh) console.warn("Race results saved; some supporting data could not refresh:", failedRefresh.reason);
+        renderRaceArchive();
+        renderDevelopment();
+        renderLineupEditor();
+        renderTeamProfile();
+        renderLeague();
+        renderRacerDirectories();
+        renderRookieDraft();
+        renderInMemoriam();
+        renderDarkSacrificeChoice();
+        showDarkSacrificeResult({ automatic: true });
+        showSeasonCeremony({ automatic: true });
+      } catch (error) {
+        console.error("Could not finalize race:", error);
+        elements.developmentMessage.textContent = error.message;
+      }
     }
+    renderRaceControls();
+    renderRaceTitle(state.race);
+    elements.raceButton.disabled = true;
+    elements.raceButton.textContent = !state.replay && state.raceCenter.raceActive
+      ? "Awaiting official result"
+      : "This race is over";
+  } finally {
+    state.finishingRaceId = null;
   }
-  renderRaceControls();
-  renderRaceTitle(state.race);
-  elements.raceButton.disabled = true;
-  elements.raceButton.textContent = "This race is over";
 }
 
 function tick() {
@@ -1674,8 +1691,9 @@ function weekdayName(raceNumber) {
 
 function renderRaceArchive() {
   closeRaceReview();
-  elements.raceHistory.innerHTML = state.raceCenter.races.length
-    ? state.raceCenter.races.map((race) => {
+  const races = state.raceCenter.races.filter((race) => race.season === state.raceCenter.season);
+  elements.raceHistory.innerHTML = races.length
+    ? races.map((race) => {
       const winner = teams.find((team) => team.id === race.winner_team_id);
       return `
         <article class="race-record">
@@ -4048,9 +4066,12 @@ async function loadDevelopment() {
 }
 
 async function loadRaceCenter() {
+  const requestVersion = state.raceCenterRequestVersion = (state.raceCenterRequestVersion || 0) + 1;
   const response = await fetch("/api/races");
   if (!response.ok) throw new Error("Could not load race archive.");
-  state.raceCenter = await response.json();
+  const center = await response.json();
+  if (requestVersion !== state.raceCenterRequestVersion) return;
+  state.raceCenter = center;
   const speedMadnessRacerIds = new Set(state.raceCenter.speedMadnessRacerIds || []);
   document.querySelectorAll("[data-speed-madness-racer]").forEach((icon) => {
     icon.hidden = !speedMadnessRacerIds.has(icon.dataset.speedMadnessRacer);
@@ -4153,6 +4174,11 @@ async function refreshAfterStewardsAction(center = null) {
 async function resumeActiveRaceView() {
   if (!isRacePageActive()) return;
   if (!state.raceCenter.raceActive || !state.raceCenter.activeRaceId) return;
+  if (state.finishingRaceId === state.raceCenter.activeRaceId) return;
+  if (state.race?.id === state.raceCenter.activeRaceId && !state.replay && state.elapsed >= state.race.duration) {
+    await finishRace();
+    return;
+  }
   if (state.running && state.timer && state.race?.id === state.raceCenter.activeRaceId) return;
   renderActiveRaceLoadingState();
 
@@ -5433,12 +5459,18 @@ async function hydrateDeferredStartupData() {
 }
 
 async function syncRaceCenter() {
+  const previousArchive = (state.raceCenter.races || []).map((race) => race.id).join(",");
   const priorUnavailableRelayDrivers = JSON.stringify(state.raceCenter.unavailableRelayDrivers || {});
   const ceremonyWasAvailable = Boolean(state.raceCenter.seasonComplete && state.raceCenter.champions);
   const darkSacrificeWasVoting = state.darkSacrifice.status === "voting";
   const darkSacrificeWasResolved = state.darkSacrifice.status === "resolved";
   const priorRelayLockReason = relayPlanRaceLockReason();
   await Promise.all([loadRaceCenter(), loadDarkSacrifice()]);
+  const archiveChanged = previousArchive !== (state.raceCenter.races || []).map((race) => race.id).join(",");
+  if (archiveChanged) {
+    renderRaceArchive();
+    renderLeague();
+  }
   if (priorUnavailableRelayDrivers !== JSON.stringify(state.raceCenter.unavailableRelayDrivers || {})) {
     if (state.relayPlanEditing) updateStintRanges();
     else renderLineupEditor();
@@ -5456,14 +5488,16 @@ async function syncRaceCenter() {
     await resumeActiveRaceView();
     renderLineupEditor();
   } else if (!state.running) {
-    if (darkSacrificeNewlyAvailable || darkSacrificeNewlyResolved || ceremonyIsNewlyAvailable) {
-      await Promise.all([loadLeagueState(), loadRacerDirectory(), loadInMemoriam(), loadSeasonEvents()]);
+    if (archiveChanged || darkSacrificeNewlyAvailable || darkSacrificeNewlyResolved || ceremonyIsNewlyAvailable) {
+      await Promise.allSettled([loadLeagueState(), loadRacerDirectory(), loadInMemoriam(), loadSeasonEvents(), loadDevelopment(), loadRookieDraft()]);
       renderTeamProfile();
       renderLeague();
       renderRacerDirectories();
       renderInMemoriam();
       renderSeasonEvents();
       renderRaceArchive();
+      renderDevelopment();
+      renderRookieDraft();
     } else {
       await loadSeasonEvents().catch(() => {});
       renderSeasonEvents();

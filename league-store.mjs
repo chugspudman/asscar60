@@ -3371,6 +3371,7 @@ export function createLeagueStore(path = ":memory:") {
     FROM races
     JOIN race_results
       ON race_results.race_id = races.id AND race_results.position = 1
+    WHERE races.season = ?
     ORDER BY races.season DESC, races.week DESC, races.race_number DESC
   `);
   const readRuntime = database.prepare(`
@@ -7034,7 +7035,7 @@ export function createLeagueStore(path = ":memory:") {
     return scheduled?.course_name || COURSES[(week - 1) % COURSES.length].name;
   }
 
-  function publicRace(row) {
+  function publicRace(row, { includeRecap = true } = {}) {
     if (!row) return null;
     const events = JSON.parse(row.events_json);
     const raceStart = events.find((event) => event.type === "race-start") || events[0];
@@ -7055,7 +7056,7 @@ export function createLeagueStore(path = ":memory:") {
       createdAt: row.created_at,
       startAt: row.start_at || row.created_at,
     };
-    race.recapText = row.recap_text || generateRaceRecap(race);
+    race.recapText = row.recap_text || (includeRecap ? generateRaceRecap(race) : "");
     return race;
   }
 
@@ -7066,8 +7067,10 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function getRaceReview(raceId) {
-    const race = publicRace(readRace.get(Number(raceId)));
-    if (!race) throw new Error("Unknown race.");
+    const row = readRace.get(Number(raceId));
+    if (!row) throw new Error("Unknown race.");
+    if (row.season !== getActiveSeason()) throw new Error("Only races from the current season are available in the Archive.");
+    const race = publicRace(row);
     const reviewEntries = race.entries.map((entry) => ({
       id: entry.id,
       teamId: entry.teamId,
@@ -7190,6 +7193,11 @@ export function createLeagueStore(path = ":memory:") {
     const race = database.prepare("SELECT id, duration, COALESCE(start_at, created_at) AS startAt FROM races WHERE id = ?").get(id);
     if (!race) throw new Error("Race not found.");
     return race;
+  }
+
+  function getActiveRaceTiming() {
+    const id = readRuntime.get().active_race_id;
+    return id === null ? null : getRaceTiming(id);
   }
 
   function getRaceCenter(season = 1) {
@@ -7328,7 +7336,7 @@ export function createLeagueStore(path = ":memory:") {
       seasonComplete,
       darkSacrifice,
       stainOfSinTeamIds: stainOfSinTeamIds(season),
-      races: cachedRead("race-summaries", () => readRaceSummaries.all()).filter((race) => race.id !== activeRaceId),
+      races: cachedRead(`race-summaries:${season}`, () => readRaceSummaries.all(season)).filter((race) => race.id !== activeRaceId),
       championship: seasonChampionships.teams,
       mvdStandings: seasonChampionships.mvds,
       teamChampionshipWins: calculateTeamChampionshipWins(completedAllRaces, darkSacrificeBonusesForSeason),
@@ -7662,7 +7670,7 @@ export function createLeagueStore(path = ":memory:") {
     const activeRaceId = readRuntime.get().active_race_id;
     if (activeRaceId === null) return getRaceCenter(getActiveSeason());
     if (activeRaceId !== Number(raceId)) throw new Error("That race is not currently active.");
-    const race = getRace(raceId);
+    const race = publicRace(readRace.get(Number(raceId)), { includeRecap: false });
     database.exec("BEGIN IMMEDIATE");
     try {
       advanceRaceLimitedSeasonEventEffects(race.season, race.createdAt);
@@ -7683,7 +7691,6 @@ export function createLeagueStore(path = ":memory:") {
           );
         }
       }
-      updateRaceRecap.run(generateRaceRecap(race, raceDebutContext(race)), race.id);
       setActiveRace.run(null, new Date().toISOString());
       if (countSeasonRaces.get(race.season).count >= SEASON_RACES) {
         ensureDarkSacrificeState(race.season);
@@ -7692,6 +7699,11 @@ export function createLeagueStore(path = ":memory:") {
     } catch (error) {
       database.exec("ROLLBACK");
       throw error;
+    }
+    try {
+      updateRaceRecap.run(generateRaceRecap(race, raceDebutContext(race)), race.id);
+    } catch (error) {
+      console.error(`Race ${race.id} finished, but its recap could not be generated:`, error);
     }
     return getRaceCenter(getActiveSeason());
   }
@@ -8197,6 +8209,7 @@ export function createLeagueStore(path = ":memory:") {
     getDevelopment,
     getRace,
     getRaceTiming,
+    getActiveRaceTiming,
     getRaceCenter,
     getSeasonHistory,
     getSeasonEvents,

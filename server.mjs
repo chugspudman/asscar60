@@ -17,6 +17,8 @@ const mimeTypes = {
   ".svg": "image/svg+xml",
 };
 let schedulerBusy = false;
+let lastSchedulerError = "";
+let lastSchedulerErrorAt = 0;
 
 function isSecureRequest(request) {
   return request.headers["x-forwarded-proto"] === "https"
@@ -111,15 +113,16 @@ function runRaceScheduler() {
   if (schedulerBusy) return;
   schedulerBusy = true;
   try {
+    const activeRace = store.getActiveRaceTiming();
+    if (activeRace) {
+      const finishAt = new Date(activeRace.startAt).getTime() + activeRace.duration * 1000;
+      if (!Number.isFinite(finishAt)) throw new Error(`Race ${activeRace.id} has invalid finish timing.`);
+      if (Date.now() >= finishAt) store.finishRace(activeRace.id);
+      return;
+    }
     const season = store.getActiveSeason();
     store.maintainRookieDraft(season);
     const center = store.getRaceCenter(season);
-    if (center.raceActive && center.activeRaceId) {
-      const race = store.getRaceTiming(center.activeRaceId);
-      const finishAt = new Date(race.startAt).getTime() + (race.duration * 1000);
-      if (Date.now() >= finishAt) store.finishRace(race.id);
-      return;
-    }
     const activationAt = scheduledRaceActivationAt(center);
     if (!activationAt || Date.now() < activationAt.getTime()) return;
     store.createRace({
@@ -127,8 +130,18 @@ function runRaceScheduler() {
       startAt: center.nextRaceAt,
       seed: `scheduled-season-${season}-race-${center.seasonRacesRun + 1}`,
     });
-  } catch {
-    // Drafts and votes intentionally block scheduled creation until resolved.
+  } catch (error) {
+    const expected = [
+      "The opening draft must be completed before Race 1.",
+      "The Stewards demand an Initiation Martyr before the first race.",
+      "The midseason rookie draft must be completed before Race 11.",
+      "This season is complete.",
+    ];
+    if (!expected.includes(error.message) && (lastSchedulerError !== error.message || Date.now() - lastSchedulerErrorAt >= 30000)) {
+      lastSchedulerError = error.message;
+      lastSchedulerErrorAt = Date.now();
+      console.error("Race scheduler failed:", error);
+    }
   } finally {
     schedulerBusy = false;
   }
@@ -482,7 +495,7 @@ const server = createServer(async (request, response) => {
     const finishRaceMatch = requestedPath.match(/^\/api\/races\/(\d+)\/finish$/);
     if (request.method === "POST" && finishRaceMatch) {
       const raceId = Number(finishRaceMatch[1]);
-      const race = store.getRace(raceId);
+      const race = store.getRaceTiming(raceId);
       const finishAt = new Date(race.startAt).getTime() + (race.duration * 1000);
       sendJson(
         response,
