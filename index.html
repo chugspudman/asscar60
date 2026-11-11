@@ -99,7 +99,7 @@
             <a href="#rules-drafts">Drafts</a>
             <a href="#rules-pit-coaches">Pit Coaches</a>
             <a href="#rules-qualifiers">Qualifiers</a>
-            <a href="#rules-stats">Stats</a>
+            <a href="#rules-stats">Driver and Car Stats</a>
             <a href="#rules-overtaking">Overtaking</a>
             <a href="#rules-driver-conditions">Driver Conditions</a>
             <a href="#rules-trainings-upgrades">Trainings and Upgrades</a>
@@ -169,7 +169,7 @@
           </section>
 
           <section id="rules-stats">
-            <h3>Stats</h3>
+            <h3>Driver and Car Stats</h3>
             <h4>Driver Stats</h4>
             <dl class="rules-stat-list">
               <dt>Control</dt><dd>Helps drivers get through turns and chicanes cleanly. Higher Control reduces the time lost through technical course features and lowers the chance of mishaps.</dd>
@@ -184,6 +184,37 @@
               <dt>Handling</dt><dd>Helps the car survive technical course sections. Higher Handling reduces time lost in turns and chicanes, lowers mishap risk, and can soften some handling-related penalties.</dd>
               <dt>Durability</dt><dd>Helps the car hold together as the race goes on. Higher Durability slows car stat degradation over the full race, especially during longer runs.</dd>
             </dl>
+
+            <section id="rules-driver-analytics" aria-labelledby="rules-driver-analytics-heading">
+              <h4 id="rules-driver-analytics-heading">Driver Analytics</h4>
+              <p>Expanded driver cards show lap-performance statistics to help managers compare drivers across courses and relay roles. These statistics use recorded laps from completed races, not qualifiers or races still in progress. Lap-performance records carry across seasons.</p>
+
+              <p><strong>Lap Performance</strong></p>
+              <dl class="rules-stat-list">
+                <dt>MLC-@ - Median Lap Time by Course</dt>
+                <dd>The driver's middle lap time on a particular course, combining all relay roles and recorded seasons. Lower is faster. For example, MLC-R is their median lap time at Race City. A median is less affected by unusually fast or slow laps than an average.</dd>
+                <dt>ALR-@ - Average Lap Time by Role</dt>
+                <dd>The driver's average lap time as an Opener, Bridge, or Closer, combining all courses and recorded seasons. Lower is faster, but the courses they have raced affect this average. For example, ALR-B is their average lap time as a Bridge driver.</dd>
+                <dt>V@@ - Driver Median Vs Course/Role Peer Median</dt>
+                <dd>Compares the driver's median lap time for one course and role against the median of the other current drivers' individual medians for that same course and role. Only peers with recorded laps in that combination are included, and each peer counts equally regardless of how many laps they have recorded. The driver's own median is excluded from the peer benchmark. A negative value means faster than the benchmark; a positive value means slower. For example, VRO -0.500s means their Race City/Opener median is half a second faster than the peer benchmark.</dd>
+              </dl>
+
+              <p><strong>Reading the Codes</strong></p>
+              <p>Course codes are R for Race City, N for New Torque City, A for Acceleton, S for Suzuka, K for Skidsburg, and V for Velociudad. Role codes are O for Opener, B for Bridge, and C for Closer.</p>
+              <p>In a V@@ statistic, the first letter after V identifies the course and the second identifies the role. For example, VKC compares performance at Skidsburg as a Closer.</p>
+
+              <p><strong>Most Recent Race</strong></p>
+              <p>These statistics describe the latest completed league race of the current season, not necessarily the last race that particular driver entered. If the driver did not participate in that race, there is no recent-race data for them.</p>
+              <dl class="rules-stat-list">
+                <dt>MISH - Mishaps</dt><dd>The number of recorded mishaps involving the driver in that race.</dd>
+                <dt>OTP - Overtakes Participated</dt><dd>The number of overtake attempts in which the driver attacked or defended, including failed attempts. Ordinary passes without a rolled overtake attempt do not count.</dd>
+                <dt>SOA - Successful Overtake Attacks</dt><dd>The number of overtake attempts in which the driver successfully passed the defender.</dd>
+                <dt>SOD - Successful Overtake Defenses</dt><dd>The number of overtake attempts in which the driver successfully prevented the attacker from passing.</dd>
+                <dt>F5 - First Five Lap Average</dt><dd>The average time of the driver's first five recorded laps in that race.</dd>
+                <dt>L5 - Last Five Lap Average</dt><dd>The average time of the driver's last five recorded laps in that race.</dd>
+              </dl>
+              <p>If fewer than five laps were recorded for the driver, F5 and L5 use the available laps. A display of -- means there is not enough recorded data to calculate a statistic; it does not mean a lap time of zero.</p>
+            </section>
           </section>
 
           <section id="rules-overtaking">
