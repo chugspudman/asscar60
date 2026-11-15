@@ -3666,11 +3666,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function developmentApplyAt(week) {
-    return developmentWeekDate(week, 2, 0, 1);
-  }
-
-  function developmentCutoffAt(week) {
-    return developmentWeekDate(week, 3, 0, 0);
+    return developmentWeekDate(week, 2, 23, 59);
   }
 
   function applyDueDevelopment(now = new Date()) {
@@ -3689,7 +3685,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function assertDevelopmentChoiceOpen(week, now = new Date()) {
-    const cutoffAt = developmentCutoffAt(week);
+    const cutoffAt = developmentApplyAt(week);
     if (cutoffAt && now >= cutoffAt) {
       throw new Error("This week's Training and Upgrade choices are closed.");
     }

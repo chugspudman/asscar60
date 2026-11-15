@@ -3598,7 +3598,7 @@ function renderDevelopment() {
           ? "This team has traded away its weekly trainings."
           : eligibleRacers.length < trainingSlots.length
             ? `${trainingSlots.length} different racers must drive this week before trainings can be locked in.`
-            : "The selections lock in now and apply Sunday at 12:01 AM Eastern. You can change them until then."}</p>
+            : "The selections lock in now and apply Sunday at 11:59 PM Eastern. You can change them until then."}</p>
     </article>`;
   updateTrainingLockEligibility();
 
@@ -3638,7 +3638,7 @@ function renderDevelopment() {
           ? "Training and Upgrade choices open once the first race of the season has begun."
         : !carUpgradeSlots.length
           ? "This team has traded away its weekly car upgrade."
-          : "The upgrade locks in now and applies Sunday at 12:01 AM Eastern. You can change it until then."}</p>
+          : "The upgrade locks in now and applies Sunday at 11:59 PM Eastern. You can change it until then."}</p>
     </article>`;
 
   const trainingHistory = state.development.choices.map((choice) => {
@@ -5270,7 +5270,7 @@ elements.upgradeOptions.addEventListener("click", async (event) => {
     )).join("; ");
     elements.developmentMessage.textContent = (result.choices || []).some((choice) => choice.appliedAt)
       ? `${summary}.`
-      : `Trainings locked in: ${summary}. They will take effect Sunday at 12:01 AM Eastern.`;
+      : `Trainings locked in: ${summary}. They will take effect Sunday at 11:59 PM Eastern.`;
   } catch (error) {
     elements.developmentMessage.textContent = error.message;
     button.disabled = false;
@@ -5316,7 +5316,7 @@ elements.carUpgradeOptions.addEventListener("click", async (event) => {
     }).join("; ");
     elements.developmentMessage.textContent = results.some((result) => result.appliedAt)
       ? `${summary}.`
-      : `Upgrade locked in: ${summary}. It will take effect Sunday at 12:01 AM Eastern.`;
+      : `Upgrade locked in: ${summary}. It will take effect Sunday at 11:59 PM Eastern.`;
   } catch (error) {
     elements.developmentMessage.textContent = error.message;
     button.disabled = false;
