@@ -24,7 +24,8 @@ const SEASON_RACES = RACES_PER_WEEK * WEEKS_PER_SEASON;
 const QUALIFIER_LOCK_MS = 10 * 60 * 1000;
 const MVD_OPENER_BONUS_UNITS = 0.01 * TOTAL_LAPS;
 const MVD_CLOSER_BONUS_UNITS = 0.02 * TOTAL_LAPS;
-const DARK_SACRIFICE_BONUS_POINTS = 100;
+const DARK_SACRIFICE_BONUS_POINTS = 15;
+const LEGACY_DARK_SACRIFICE_BONUS_POINTS = 100;
 const LEAGUE_CODE = "shreveport";
 const STEWARD_USERNAME = "devman";
 const STEWARD_PASSWORD = "devman";
@@ -67,7 +68,7 @@ const PIT_COACH_SPECIALTIES = [
   {
     key: "specialty-8",
     name: "Specialty 8",
-    description: "If you pick your highest-scoring driver as a Dark Sacrifice at the end of the season, you get the normal +100 to your season score and the curse next season, but you are also given first pick in next season's opening draft.",
+    description: `If you pick your highest-scoring driver as a Dark Sacrifice at the end of the season, you get the normal +${DARK_SACRIFICE_BONUS_POINTS} to your season score and the curse next season, but you are also given first pick in next season's opening draft.`,
   },
   {
     key: "specialty-9",
@@ -1845,6 +1846,10 @@ export function createLeagueStore(path = ":memory:") {
   if (!runtimeColumns.some((column) => column.name === "active_season")) {
     database.exec("ALTER TABLE league_runtime ADD COLUMN active_season INTEGER NOT NULL DEFAULT 1");
   }
+  const darkSacrificeColumns = database.prepare("PRAGMA table_info(dark_sacrifice_state)").all();
+  if (!darkSacrificeColumns.some((column) => column.name === "bonus_points")) {
+    database.exec("ALTER TABLE dark_sacrifice_state ADD COLUMN bonus_points INTEGER");
+  }
   const seasonHistoryColumns = database.prepare("PRAGMA table_info(season_history)").all();
   if (!seasonHistoryColumns.some((column) => column.name === "opening_draft_json")) {
     database.exec("ALTER TABLE season_history ADD COLUMN opening_draft_json TEXT");
@@ -2508,7 +2513,7 @@ export function createLeagueStore(path = ":memory:") {
   `);
   const resolveDarkSacrificeState = database.prepare(`
     UPDATE dark_sacrifice_state
-    SET status = 'resolved', resolved_at = ?
+    SET status = 'resolved', resolved_at = ?, bonus_points = ?
     WHERE season = ?
   `);
   const markSignedRacerAsMartyr = database.prepare(`
@@ -4236,8 +4241,9 @@ export function createLeagueStore(path = ":memory:") {
     }
     const state = readDarkSacrificeState.get(season);
     if (state?.status !== "resolved") return bonuses;
+    const points = state.bonus_points ?? LEGACY_DARK_SACRIFICE_BONUS_POINTS;
     for (const vote of readDarkSacrificeVotes.all(season)) {
-      if (vote.racer_id) bonuses[vote.team_id] = (bonuses[vote.team_id] || 0) + DARK_SACRIFICE_BONUS_POINTS;
+      if (vote.racer_id) bonuses[vote.team_id] = (bonuses[vote.team_id] || 0) + points;
     }
     return bonuses;
   }
@@ -4316,7 +4322,7 @@ export function createLeagueStore(path = ":memory:") {
         for (const choice of choices) {
           if (choice.racer_id) markSignedRacerAsMartyr.run(choice.racer_id);
         }
-        resolveDarkSacrificeState.run(now, season);
+        resolveDarkSacrificeState.run(now, DARK_SACRIFICE_BONUS_POINTS, season);
         finalizeSeasonHistory(season);
       }
       database.exec("COMMIT");
