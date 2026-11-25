@@ -195,20 +195,12 @@ function applySpeedMadness(entry, driver) {
 }
 
 export function chooseStrangeEffect(effects, entry, driver, random) {
-  const allowedEffects = driver?.speed_mark
-    ? effects.filter((effect) => effect.tone !== "bad")
-    : effects;
-  if (!allowedEffects.length) return null;
-  if (!entry.pitCoach?.stainOfSin) {
-    return allowedEffects[Math.floor(random() * allowedEffects.length)];
-  }
-  const goodEffects = allowedEffects.filter((effect) => effect.tone === "good");
-  const badEffects = allowedEffects.filter((effect) => effect.tone === "bad");
-  if (!goodEffects.length || !badEffects.length) {
-    return allowedEffects[Math.floor(random() * allowedEffects.length)];
-  }
-  const pool = random() < 1 / 6 ? goodEffects : badEffects;
-  return pool[Math.floor(random() * pool.length)];
+  const allowedEffects = effects.filter((effect) =>
+    !(entry.pitCoach?.stainOfSin && effect.tone === "good")
+    && !(driver?.speed_mark && effect.tone === "bad"));
+  return allowedEffects.length
+    ? allowedEffects[Math.floor(random() * allowedEffects.length)]
+    : null;
 }
 
 function mergeRaceOrder(currentOrder, activeOrder) {
