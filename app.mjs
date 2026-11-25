@@ -94,6 +94,7 @@ const state = {
   managerUsername: null,
   managerTeamId: null,
   selectedTeamId: teams[0].id,
+  selectedRaceEntryId: null,
   relayPlanEditing: false,
   lineups: defaultLineups,
   carNames: defaultCarNamesByTeam,
@@ -696,9 +697,11 @@ function renderRaceProgress(standings = [], label = "") {
         : trackPercent(progress * 100);
     const labelText = `${entry?.carName || standing.id} / ${standing.driver || "Driver pending"} / ${standing.status === "dnf" ? "DNF" : `Lap ${Math.min(TOTAL_LAPS, standing.completedLaps + 1)}`}`;
     return `
-      <span class="race-progress-dot ${standing.status || "running"}"
+      <button type="button" class="race-progress-dot ${standing.status || "running"}${state.selectedRaceEntryId === standing.id ? " selected" : ""}"
+        data-race-entry="${escapeAttribute(standing.id)}"
+        aria-pressed="${state.selectedRaceEntryId === standing.id}"
         style="--dot-left:${percent}%; --dot-color:${entry?.color || "var(--acid)"}"
-        aria-label="${escapeAttribute(labelText)}"></span>`;
+        aria-label="${escapeAttribute(labelText)}"></button>`;
   }).join("");
   elements.raceProgressTrack.innerHTML = `${featureMarkers}${leaderMarker}${progressDots}`;
 }
@@ -853,11 +856,11 @@ function racerById(racerId) {
     .find((racer) => racer.id === racerId) || null;
 }
 
-function standingsMarkup(standings) {
+function standingsMarkup(standings, highlightSelection = true) {
   return standings.map((standing) => {
     const entry = entryById(standing.id);
     return `
-      <div class="standing-row" data-entry="${standing.id}">
+      <div class="standing-row${highlightSelection && state.selectedRaceEntryId === standing.id ? " selected-race-entry" : ""}" data-entry="${standing.id}">
         <span class="position">${String(standing.position).padStart(2, "0")}</span>
         <span class="entry-name"><i class="team-stripe" style="background:${entry.color}"></i>${entry.carName}</span>
         <span class="driver-name">${abbreviatedRacerName(standing.driver)}</span>
@@ -869,7 +872,7 @@ function standingsMarkup(standings) {
 
 function qualifierGridMarkup(grid) {
   return grid.map((entry) => `
-    <div class="standing-row" data-entry="${entry.id}">
+    <div class="standing-row${state.selectedRaceEntryId === entry.id ? " selected-race-entry" : ""}" data-entry="${entry.id}">
       <span class="position">${String(entry.gridPosition).padStart(2, "0")}</span>
       <span class="entry-name"><i class="team-stripe" style="background:${entry.color}"></i>${escapeHtml(entry.carName)}</span>
       <span class="driver-name">${escapeHtml(abbreviatedRacerName(entry.driver))}${qualifierIncidentMarkup(entry)}</span>
@@ -1014,7 +1017,7 @@ function qualifierIncidentMarkup(entry) {
 
 function renderInitialStandings(entries = currentEntries()) {
   elements.standings.innerHTML = entries.map((entry, index) => `
-    <div class="standing-row">
+    <div class="standing-row${state.selectedRaceEntryId === entry.id ? " selected-race-entry" : ""}" data-entry="${escapeAttribute(entry.id)}">
       <span class="position">${String(index + 1).padStart(2, "0")}</span>
       <span class="entry-name"><i class="team-stripe" style="background:${entry.color}"></i>${escapeHtml(entry.carName)}</span>
       <span class="driver-name">${escapeHtml(abbreviatedRacerName(entry.stints?.[0]?.driver?.name || "Awaiting draft"))}</span>
@@ -1119,7 +1122,7 @@ function renderRaceReview(race, button = null) {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
     .join("");
-  elements.raceReviewStandings.innerHTML = standingsMarkup(race.finalStandings);
+  elements.raceReviewStandings.innerHTML = standingsMarkup(race.finalStandings, false);
   if (elements.raceReviewRelay) {
     elements.raceReviewRelay.innerHTML = raceReviewRelayMarkup(race.entries);
   }
@@ -5859,6 +5862,20 @@ elements.mediaList.addEventListener("click", async (event) => {
     }
     renderMediaPage();
   }
+});
+elements.raceProgressTrack.addEventListener("click", (event) => {
+  const dot = event.target.closest("[data-race-entry]");
+  if (!dot) return;
+  const id = dot.dataset.raceEntry;
+  state.selectedRaceEntryId = state.selectedRaceEntryId === id ? null : id;
+  elements.raceProgressTrack.querySelectorAll("[data-race-entry]").forEach((item) => {
+    const selected = item.dataset.raceEntry === state.selectedRaceEntryId;
+    item.classList.toggle("selected", selected);
+    item.setAttribute("aria-pressed", String(selected));
+  });
+  elements.standings.querySelectorAll("[data-entry]").forEach((row) => {
+    row.classList.toggle("selected-race-entry", row.dataset.entry === state.selectedRaceEntryId);
+  });
 });
 document.addEventListener("click", (event) => {
   if (!elements.appMenu.hidden && !event.target.closest(".app-menu-shell")) {
