@@ -1748,6 +1748,7 @@ function renderRaceArchive() {
         <span>${pointsLabel(standing.points)} pts</span>
       </div>`;
   }).join("");
+  renderSeasonPerformance();
   elements.mvdStandings.innerHTML = state.raceCenter.mvdStandings.map((standing) => `
     <div class="championship-row">
       <span class="position">${String(standing.rank).padStart(2, "0")}</span>
@@ -1756,6 +1757,81 @@ function renderRaceArchive() {
       <span>${pointsLabel(standing.points)} pts</span>
     </div>
   `).join("");
+}
+
+const hiddenPerformanceTeams = new Set();
+let selectedPerformancePoint = null;
+
+function renderSeasonPerformance() {
+  const svg = document.querySelector("#season-performance-graph");
+  if (!svg) return;
+  const legend = document.querySelector("#season-performance-legend");
+  const score = document.querySelector("#season-performance-score");
+  const rows = state.raceCenter.seasonPerformance || [];
+  const season = state.raceCenter.season;
+  const x = (race) => 62 + race * 25.5;
+  const y = (points) => 410.5 - points * .725;
+  const create = (tag, attributes, text, parent = svg) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+    if (text !== undefined) node.textContent = text;
+    parent.append(node);
+    return node;
+  };
+  svg.replaceChildren();
+  legend.replaceChildren();
+  create("title", {}, `Season ${season} Performance`);
+  create("desc", {}, "Cumulative points after each completed race. All teams start at zero. The scale runs from zero to 500 points.");
+  for (let points = 0; points <= 500; points += 100) {
+    create("line", { x1:x(0), x2:x(points === 0 || points === 500 ? 20.5 : 20), y1:y(points), y2:y(points), stroke:"var(--line)" });
+    create("text", { x:48, y:y(points)+4, "text-anchor":"end" }, points);
+  }
+  create("text", { x:38, y:22, "text-anchor":"middle" }, "TEAM POINTS");
+  for (let week = 1; week <= 4; week++) {
+    create("text", { x:x((week-1)*5+3), y:41, "text-anchor":"middle" }, `WEEK ${week}`);
+  }
+  for (const boundary of [.5,5.5,10.5,15.5,20.5]) {
+    create("line", { x1:x(boundary), x2:x(boundary), y1:48, y2:y(0), stroke:"var(--line)", "stroke-dasharray":"3 6" });
+  }
+  for (let race = 1; race <= 20; race++) {
+    create("line", { x1:x(race), x2:x(race), y1:y(0), y2:y(0)+8, stroke:"var(--muted)", "stroke-width":1.5 });
+    create("text", { x:x(race), y:445.5, "text-anchor":"middle" }, race);
+  }
+  create("text", { x:(x(0)+x(20))/2, y:477.5, "text-anchor":"middle" }, "RACE OF THE SEASON");
+  const describe = (team, race, points) => `${team.name} / ${race ? `Race ${race} end` : "Before Race 1"} / ${pointsLabel(points)} points`;
+  score.textContent = "";
+  teams.forEach((team) => {
+    const visible = !hiddenPerformanceTeams.has(team.id);
+    const group = create("g", { style:visible ? "" : "display:none" });
+    const points = [{race:0, points:0}, ...rows.map((row) => ({race:row.race, points:Number(row.points[team.id] || 0)}))];
+    create("polyline", { points:points.map((point) => `${x(point.race)},${y(point.points)}`).join(" "), fill:"none", stroke:team.color, "stroke-width":2.5, "stroke-linejoin":"round", "stroke-linecap":"round" }, undefined, group);
+    points.forEach((point) => {
+      const description = describe(team, point.race, point.points);
+      const dot = create("circle", { cx:x(point.race), cy:y(point.points), r:3, fill:team.color, tabindex:visible ? 0 : -1, role:"button", "aria-label":description }, undefined, group);
+      create("title", {}, description, dot);
+      const select = () => {
+        selectedPerformancePoint = {season, teamId:team.id, race:point.race};
+        score.textContent = description;
+      };
+      dot.addEventListener("click", select);
+      dot.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
+      });
+      if (visible && selectedPerformancePoint?.season === season && selectedPerformancePoint.teamId === team.id && selectedPerformancePoint.race === point.race) score.textContent = description;
+    });
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(visible));
+    const swatch = document.createElement("i");
+    swatch.style.background = team.color;
+    button.append(swatch, document.createTextNode(team.name));
+    button.addEventListener("click", () => {
+      if (hiddenPerformanceTeams.has(team.id)) hiddenPerformanceTeams.delete(team.id);
+      else hiddenPerformanceTeams.add(team.id);
+      renderSeasonPerformance();
+    });
+    legend.append(button);
+  });
 }
 
 function seasonCeremonyStorageKey() {

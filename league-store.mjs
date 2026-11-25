@@ -973,6 +973,28 @@ function generateRaceRecap(race, context = {}) {
   return `${paragraphOneParts.join(" ")}\n\n${paragraphTwoParts.join(" ")}`;
 }
 
+export function seasonPerformance(raceRows, adjustments = []) {
+  const totals = Object.fromEntries(teams.map((team) => [team.id, 0]));
+  const applied = new Set();
+  return [...raceRows].sort((a, b) => a.week - b.week || a.race_number - b.race_number).map((race) => {
+    const entries = new Map(JSON.parse(race.entries_json).map((entry) => [entry.id, entry]));
+    for (const standing of JSON.parse(race.standings_json)) {
+      const teamId = entries.get(standing.id)?.teamId;
+      if (teamId in totals && standing.status !== "dnf") {
+        totals[teamId] += RACE_POINTS[standing.position - 1] ?? 0;
+      }
+    }
+    const endedAt = Date.parse(race.start_at || race.created_at) + Number(race.duration || 0) * 1000;
+    adjustments.forEach((adjustment, index) => {
+      if (!applied.has(index) && Date.parse(adjustment.created_at) <= endedAt) {
+        if (adjustment.team_id in totals) totals[adjustment.team_id] += Number(adjustment.points);
+        applied.add(index);
+      }
+    });
+    return { race: (race.week - 1) * RACES_PER_WEEK + race.race_number, points: { ...totals } };
+  });
+}
+
 function calculateSeasonChampionships(raceRows, darkSacrificeBonuses = {}) {
   const teamRecords = new Map(teams.map((team) => [team.id, {
     teamId: team.id,
@@ -7340,6 +7362,10 @@ export function createLeagueStore(path = ":memory:") {
       stainOfSinTeamIds: stainOfSinTeamIds(season),
       races: cachedRead(`race-summaries:${season}`, () => readRaceSummaries.all(season)).filter((race) => race.id !== activeRaceId),
       championship: seasonChampionships.teams,
+      seasonPerformance: cachedRead(`season-performance:${season}`, () => seasonPerformance(
+        database.prepare("SELECT id, week, race_number, entries_json, standings_json, start_at, created_at, duration FROM races WHERE season = ? AND id IS NOT ? ORDER BY week, race_number").all(season, activeRaceId),
+        database.prepare("SELECT team_id, points, created_at FROM team_point_adjustments WHERE season = ?").all(season),
+      )),
       mvdStandings: seasonChampionships.mvds,
       teamChampionshipWins: calculateTeamChampionshipWins(completedAllRaces, darkSacrificeBonusesForSeason),
       teamTotals: calculateTeamTotals(

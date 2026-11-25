@@ -980,6 +980,20 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .season-ceremony-closing { margin: 28px 0 0; color: #f5d84a; font-weight: 800; }
 .season-ceremony-actions { display: flex; justify-content: flex-end; margin-top: 28px; }
 .championship-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.championship-grid > section { min-width: 0; }
+.season-performance { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+.season-performance .section-heading { margin-bottom: 4px; }
+.season-performance-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 14px; }
+.season-performance-scroll { overflow-x: auto; }
+.season-performance svg { display: block; width: 610px; height: auto; }
+.season-performance svg text { fill: var(--muted); font: 11px "DM Mono", monospace; }
+.season-performance circle { cursor: pointer; }
+.season-performance circle:hover, .season-performance circle:focus { r: 5; outline: none; stroke: var(--ink); stroke-width: 1; }
+.season-performance-legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 4px 0 0 16px; }
+.season-performance-legend button { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 7px 0; font-size: 12px; cursor: pointer; }
+.season-performance-legend i { width: 24px; height: 3px; }
+.season-performance-legend button[aria-pressed="false"] { opacity: .35; }
+.season-performance-score { min-height: 22px; margin: 12px 0 0 16px; font: 12px "DM Mono", monospace; }
 .race-record { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); }
 .race-record:first-child { border-top: 0; }
 .race-record-number { display: block; color: var(--teal); font: 500 10px "DM Mono", monospace; margin-bottom: 5px; }

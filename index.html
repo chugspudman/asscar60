@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ASSCAR60</title>
-  <link rel="stylesheet" href="/styles.css?v=trade-builder-20260718d">
+  <link rel="stylesheet" href="/styles.css?v=season-performance-20261124">
 </head>
 <body>
   <section id="auth-view" class="auth-view">
@@ -533,9 +533,16 @@
       <div class="championship-grid">
         <section class="panel championship-panel">
           <div class="section-heading">
-            <div><span class="eyebrow">Both cars score</span><h2>Team championship</h2></div>
+            <div><span class="eyebrow">Both cars score</span><h2>Team Championship</h2></div>
           </div>
           <div id="championship-standings"></div>
+          <section class="season-performance" aria-labelledby="season-performance-title">
+            <div class="section-heading"><div><span class="eyebrow">Race by race</span><h2 id="season-performance-title">Season Performance</h2></div></div>
+            <p class="season-performance-note">Cumulative team points at the end of each race. Click a point to see that team's total score at that time. Click on team names below to toggle their lines on and off.</p>
+            <div class="season-performance-scroll"><svg id="season-performance-graph" viewBox="0 0 610 493" role="group" aria-label="Current season cumulative team points by race"></svg></div>
+            <div id="season-performance-legend" class="season-performance-legend"></div>
+            <p id="season-performance-score" class="season-performance-score" aria-live="polite"></p>
+          </section>
         </section>
         <section class="panel championship-panel mvd-panel">
           <div class="section-heading">
@@ -959,6 +966,6 @@
       </div>
     </form>
   </dialog>
-<script type="module" src="/app.mjs?v=race-completion-sync-20261102"></script>
+<script type="module" src="/app.mjs?v=season-performance-20261124"></script>
 </body>
 </html>
