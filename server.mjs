@@ -122,6 +122,11 @@ function runRaceScheduler() {
       if (Date.now() >= finishAt) store.finishRace(activeRace.id);
       return;
     }
+    try {
+      store.maintainRaceStorage();
+    } catch (error) {
+      console.error("Background race-storage cleanup failed:", error);
+    }
     const season = store.getActiveSeason();
     store.maintainRookieDraft(season);
     const center = store.getRaceCenter(season);

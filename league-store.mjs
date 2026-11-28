@@ -1384,8 +1384,32 @@ function applyQualifierGrid(entries, standings, courseName, condition = "Sunny",
   });
 }
 
+export function compactRaceEvents(events) {
+  const snapshots = events.map((event, index) => ({event,index}))
+    .filter(({event}) => event.standings?.length && event.time >= 0)
+    .sort((a,b) => a.event.time - b.event.time);
+  const lateSnapshot = snapshots.find(({event}) => event.standings.some((standing) => standing.completedLaps >= 50))
+    || snapshots.at(-1);
+  return events.map((event, index) => {
+    if (!Array.isArray(event.standings)) return event;
+    // Recaps use every leader, the pass participants, and one full late-race order.
+    const needed = new Set([event.standings[0]?.id, event.entryId, event.relatedEntryId]);
+    return {
+      ...event,
+      standings: event.standings.filter((standing) => index === lateSnapshot?.index || needed.has(standing.id)).map((standing) => Object.fromEntries(
+        ["id", "position", "driver", "completedLaps"]
+          .filter((key) => Object.hasOwn(standing, key))
+          .map((key) => [key, standing[key]]),
+      )),
+    };
+  });
+}
+
 export function createLeagueStore(path = ":memory:") {
   const database = new DatabaseSync(path);
+  if (database.prepare("PRAGMA page_count").get().page_count === 0) {
+    database.exec("PRAGMA auto_vacuum = INCREMENTAL");
+  }
   database.exec(`
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
@@ -2061,6 +2085,9 @@ export function createLeagueStore(path = ":memory:") {
     `);
   }
   const raceColumns = database.prepare("PRAGMA table_info(races)").all();
+  if (!raceColumns.some((column) => column.name === "events_compacted")) {
+    database.exec("ALTER TABLE races ADD COLUMN events_compacted INTEGER NOT NULL DEFAULT 0");
+  }
   if (!raceColumns.some((column) => column.name === "start_at")) {
     database.exec("ALTER TABLE races ADD COLUMN start_at TEXT");
     database.exec("UPDATE races SET start_at = created_at WHERE start_at IS NULL");
@@ -2820,7 +2847,7 @@ export function createLeagueStore(path = ":memory:") {
 
     database.exec("BEGIN IMMEDIATE");
     try {
-      for (const race of readAllRacePayloads.all()) {
+      for (const race of racePayloads()) {
         const entries = JSON.parse(race.entries_json);
         const events = JSON.parse(race.events_json);
         let changed = false;
@@ -3312,9 +3339,15 @@ export function createLeagueStore(path = ":memory:") {
     ORDER BY id DESC
     LIMIT 1
   `);
-  const readAllRacePayloads = database.prepare(`
-    SELECT id, entries_json, events_json FROM races
+  const readAllRacePayloadIds = database.prepare("SELECT id FROM races ORDER BY id");
+  const readRacePayload = database.prepare(`
+    SELECT id, entries_json, events_json FROM races WHERE id = ?
   `);
+  function* racePayloads() {
+    for (const { id } of readAllRacePayloadIds.all()) {
+      yield readRacePayload.get(id);
+    }
+  }
   const updateRacePayload = database.prepare(`
     UPDATE races SET entries_json = ?, events_json = ?, recap_text = NULL WHERE id = ?
   `);
@@ -3327,7 +3360,7 @@ export function createLeagueStore(path = ":memory:") {
   const updateRaceRecap = database.prepare(`
     UPDATE races SET recap_text = ? WHERE id = ?
   `);
-  for (const race of readAllRacePayloads.all()) {
+  for (const race of racePayloads()) {
     const entries = JSON.parse(race.entries_json);
     const events = JSON.parse(race.events_json);
     const drivers = [...new Map(entries.flatMap((entry) => (
@@ -3990,7 +4023,7 @@ export function createLeagueStore(path = ":memory:") {
       }
 
       if (element === "abbreviation") {
-        for (const race of readAllRacePayloads.all()) {
+        for (const race of racePayloads()) {
           const entries = JSON.parse(race.entries_json);
           const events = JSON.parse(race.events_json);
           let changed = false;
@@ -4018,7 +4051,7 @@ export function createLeagueStore(path = ":memory:") {
           WHERE team_id = ?
         `).run(nextValue, teamId);
       } else if (element === "name") {
-        for (const race of readAllRacePayloads.all()) {
+        for (const race of racePayloads()) {
           const entries = JSON.parse(race.entries_json);
           let changed = false;
           for (const entry of entries) {
@@ -4134,7 +4167,7 @@ export function createLeagueStore(path = ":memory:") {
     database.exec("BEGIN IMMEDIATE");
     try {
       updateTeam.run(carNames[0], carNames[1], new Date().toISOString(), teamId);
-      for (const race of readAllRacePayloads.all()) {
+      for (const race of racePayloads()) {
         const entries = JSON.parse(race.entries_json);
         const events = JSON.parse(race.events_json);
         let changed = false;
@@ -7351,6 +7384,51 @@ export function createLeagueStore(path = ":memory:") {
     return id === null ? null : getRaceTiming(id);
   }
 
+  let lastStorageReclaimAt = 0;
+
+  function maintainRaceStorage({ limit = 1 } = {}) {
+    const summary = { compacted:0, bytesRemoved:0 };
+    if (readRuntime.get().active_race_id !== null) return summary;
+    const batchSize = Math.min(20, Math.max(1, Number.isInteger(limit) ? limit : 1));
+    for (let index = 0; index < batchSize; index++) {
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const runtime = readRuntime.get();
+        if (runtime.active_race_id !== null) {
+          database.exec("ROLLBACK");
+          break;
+        }
+        const latest = database.prepare("SELECT MAX(id) AS id FROM races WHERE season = ? AND id IS NOT ?")
+          .get(runtime.active_season, runtime.active_race_id).id ?? -1;
+        const row = database.prepare(`SELECT id, events_json FROM races WHERE events_compacted = 0
+          AND (season < ? OR (season = ? AND id != ?)) AND id IS NOT ?
+          ORDER BY season, id LIMIT 1`).get(runtime.active_season, runtime.active_season, latest, runtime.active_race_id);
+        if (!row) {
+          database.exec("ROLLBACK");
+          break;
+        }
+        const compacted = JSON.stringify(compactRaceEvents(JSON.parse(row.events_json)));
+        database.prepare("UPDATE races SET events_json = ?, events_compacted = 1 WHERE id = ?").run(compacted, row.id);
+        database.exec("COMMIT");
+        summary.compacted += 1;
+        summary.bytesRemoved += Math.max(0, Buffer.byteLength(row.events_json) - Buffer.byteLength(compacted));
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    }
+    // Older databases without incremental vacuum reuse freed pages but need a one-time offline shrink.
+    if (summary.compacted || Date.now() - lastStorageReclaimAt >= 60_000) {
+      lastStorageReclaimAt = Date.now();
+      if (database.prepare("PRAGMA auto_vacuum").get().auto_vacuum === 2
+        && database.prepare("PRAGMA freelist_count").get().freelist_count > 0) {
+        database.exec("PRAGMA incremental_vacuum(256)");
+      }
+      if (path !== ":memory:") database.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+    }
+    return summary;
+  }
+
   function getRaceCenter(season = 1) {
     maintainCalibrationHistory();
     applyDueDevelopment();
@@ -8315,6 +8393,7 @@ export function createLeagueStore(path = ":memory:") {
     getCalibration,
     getCalibrationHistory,
     maintainCalibrationHistory,
+    maintainRaceStorage,
     saveCarCalibration,
     getRace,
     getRaceTiming,
