@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { validateCalibration, calibrationPeriod } from "./calibration.mjs";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import {
   buildEntries, defaultCarNames, defaultLineup, teams,
@@ -1847,6 +1848,26 @@ export function createLeagueStore(path = ":memory:") {
       updated_at TEXT NOT NULL
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS calibration_history_periods (
+      season INTEGER NOT NULL,
+      week INTEGER NOT NULL CHECK (week BETWEEN 1 AND 4),
+      closes_at TEXT NOT NULL,
+      recorded_at TEXT,
+      PRIMARY KEY (season, week)
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS calibration_history (
+      season INTEGER NOT NULL,
+      week INTEGER NOT NULL,
+      team_id TEXT NOT NULL,
+      car_index INTEGER NOT NULL CHECK (car_index BETWEEN 0 AND 1),
+      speed INTEGER NOT NULL,
+      handling INTEGER NOT NULL,
+      durability INTEGER NOT NULL,
+      PRIMARY KEY (season, week, team_id, car_index),
+      FOREIGN KEY (season, week) REFERENCES calibration_history_periods(season, week)
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS app_migrations (
       key TEXT PRIMARY KEY,
       applied_at TEXT NOT NULL
@@ -1854,6 +1875,16 @@ export function createLeagueStore(path = ":memory:") {
 
   `);
 
+  const carColumns = database.prepare("PRAGMA table_info(cars)").all();
+  if (!carColumns.some((column) => column.name === "total_points")) {
+    database.exec(`
+      BEGIN IMMEDIATE;
+      ALTER TABLE cars ADD COLUMN total_points INTEGER NOT NULL DEFAULT 12 CHECK (total_points BETWEEN 3 AND 30);
+      ALTER TABLE cars ADD COLUMN calibration_locked_period TEXT;
+      UPDATE cars SET speed = 4, handling = 4, durability = 4;
+      COMMIT;
+    `);
+  }
   const managerColumns = database.prepare("PRAGMA table_info(managers)").all();
   if (!managerColumns.some((column) => column.name === "team_id")) {
     database.exec("ALTER TABLE managers ADD COLUMN team_id TEXT");
@@ -2191,7 +2222,7 @@ export function createLeagueStore(path = ":memory:") {
   const insertCar = database.prepare(`
     INSERT OR IGNORE INTO cars (
       team_id, car_index, speed, handling, durability, feedback, weird
-    ) VALUES (?, ?, 3, 3, 3, 3, 3)
+    ) VALUES (?, ?, 4, 4, 4, 3, 3)
   `);
   const insertRacer = database.prepare(`
     INSERT OR IGNORE INTO racers (
@@ -2346,7 +2377,7 @@ export function createLeagueStore(path = ":memory:") {
     ORDER BY team_id, car_index, stint_index
   `);
   const readCars = database.prepare(`
-    SELECT team_id, car_index, speed, handling, durability, feedback, weird
+    SELECT team_id, car_index, speed, handling, durability, feedback, weird, total_points, calibration_locked_period
     FROM cars
     ORDER BY team_id, car_index
   `);
@@ -3663,19 +3694,8 @@ export function createLeagueStore(path = ":memory:") {
       markUpgradeChoiceApplied.run(result, appliedAt, choice.week, choice.team_id, choice.slot);
     }
 
-    for (const choice of readPendingCarUpgradeChoices.all(week)) {
-      const car = readCar.get(choice.team_id, choice.car_index);
-      const other = readCar.get(choice.team_id, 1 - choice.car_index);
-      if (car && car[choice.stat] < 10) {
-        database.prepare(`UPDATE cars SET ${choice.stat} = ${choice.stat} + 1
-          WHERE team_id = ? AND car_index = ?`).run(choice.team_id, choice.car_index);
-        if (other && car.speed < other.speed && pitCoachKeyForTeam(choice.team_id, developmentSeasonForWeek(week)) === "season-2-specialty-1") {
-          database.prepare("UPDATE cars SET durability = MIN(10, durability + 1) WHERE team_id = ? AND car_index = ?").run(choice.team_id, 1 - choice.car_index);
-        }
-      }
-      markCarUpgradeChoiceApplied.run(appliedAt, choice.week, choice.team_id, choice.slot);
-    }
   }
+
 
   function developmentWeekDate(week, dayOffsetFromFriday, hour, minute) {
     const draft = readDraftState.get();
@@ -3709,7 +3729,7 @@ export function createLeagueStore(path = ":memory:") {
   function assertDevelopmentChoiceOpen(week, now = new Date()) {
     const cutoffAt = developmentApplyAt(week);
     if (cutoffAt && now >= cutoffAt) {
-      throw new Error("This week's Training and Upgrade choices are closed.");
+      throw new Error("This week's Training choices are closed.");
     }
   }
 
@@ -3724,10 +3744,10 @@ export function createLeagueStore(path = ":memory:") {
 
   function assertDevelopmentSeasonStarted(week) {
     if (displayWeekForKey(week) >= WEEKS_PER_SEASON) {
-      throw new Error("Training and Upgrade choices are closed during the final week of the season.");
+      throw new Error("Training choices are closed during the final week of the season.");
     }
     if (!developmentChoicesOpenForWeek(week)) {
-      throw new Error("Training and Upgrade choices open once the first race of the season has begun.");
+      throw new Error("Training choices open once the first race of the season has begun.");
     }
   }
 
@@ -3801,7 +3821,74 @@ export function createLeagueStore(path = ":memory:") {
     );
   }
 
+  function getCalibration(now = new Date()) {
+    const draft = readDraftState.get();
+    const season = getActiveSeason();
+    const runtime = readRuntime.get();
+    const completed = countSeasonRaces.get(season).count - (runtime.active_race_id === null ? 0 : 1);
+    return calibrationPeriod({
+      now, season, draftComplete:draft?.status === "complete",
+      firstRaceAt:draft?.started_at ? firstRaceAtForDraft(draft.started_at) : null,
+      racesCompleted:completed, raceActive:runtime.active_race_id !== null,
+      easternParts, addEasternDays, easternWallTimeToDate,
+    });
+  }
+
+  function maintainCalibrationHistory(now = new Date()) {
+    const season = getActiveSeason();
+    const period = getCalibration(now);
+    const pending = database.prepare("SELECT * FROM calibration_history_periods WHERE season = ? AND recorded_at IS NULL AND closes_at <= ? ORDER BY week")
+      .all(season, now.toISOString());
+    const register = period.open && !database.prepare("SELECT 1 FROM calibration_history_periods WHERE season = ? AND week = ?").get(season, period.week);
+    if (!pending.length && !register) return;
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const window of pending) {
+        database.prepare(`INSERT OR IGNORE INTO calibration_history (season, week, team_id, car_index, speed, handling, durability)
+          SELECT ?, ?, team_id, car_index, speed, handling, durability FROM cars`).run(season, window.week);
+        database.prepare("UPDATE calibration_history_periods SET recorded_at = ? WHERE season = ? AND week = ? AND recorded_at IS NULL")
+          .run(now.toISOString(), season, window.week);
+      }
+      if (register) {
+        database.prepare("INSERT OR IGNORE INTO calibration_history_periods (season, week, closes_at) VALUES (?, ?, ?)")
+          .run(season, period.week, period.closesAt);
+      }
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  function getCalibrationHistory(season = getActiveSeason()) {
+    return database.prepare(`SELECT history.week, history.team_id AS teamId, history.car_index AS carIndex,
+      history.speed, history.handling, history.durability, periods.closes_at AS closedAt
+      FROM calibration_history history JOIN calibration_history_periods periods
+        ON periods.season = history.season AND periods.week = history.week
+      WHERE history.season = ? ORDER BY history.week DESC, history.team_id, history.car_index`).all(season);
+  }
+
+  function saveCarCalibration(teamId, carIndex, stats, now = new Date()) {
+    maintainCalibrationHistory(now);
+    if (!teams.some((team) => team.id === teamId) || ![0,1].includes(carIndex)) throw new Error("Unknown car.");
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const period = getCalibration(now);
+      if (!period.open) throw new Error("The calibration period is closed.");
+      const car = readCar.get(teamId, carIndex);
+      const values = validateCalibration(stats, car.total_points);
+      database.prepare("UPDATE cars SET speed = ?, handling = ?, durability = ?, calibration_locked_period = ? WHERE team_id = ? AND car_index = ?")
+        .run(values.speed, values.handling, values.durability, period.period, teamId, carIndex);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return getLeagueState();
+  }
+
   function getLeagueState() {
+    maintainCalibrationHistory();
     const lineups = {};
     const carNames = {};
     const cars = {};
@@ -3824,12 +3911,17 @@ export function createLeagueStore(path = ":memory:") {
         speed: row.speed,
         handling: row.handling,
         durability: row.durability,
+        totalPoints: row.total_points,
+        freePoints: row.total_points - row.speed - row.handling - row.durability,
+        lockedPeriod: row.calibration_locked_period,
       });
     }
     return {
       lineups,
       carNames,
       cars,
+      calibration: getCalibration(),
+      calibrationHistory: getCalibrationHistory(),
       rosters,
       pitCoaches: Object.fromEntries(readPitCoachSelections.all(getActiveSeason()).map((selection) => [
         selection.team_id,
@@ -6174,15 +6266,19 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function assertTradeAssetAvailable(teamId, item) {
+    if (item.type === "car_points") {
+      const car = readCar.get(teamId, item.carIndex);
+      if (!car || car.total_points - car.speed - car.handling - car.durability < item.points) {
+        throw new Error("That car does not have enough unallocated points to trade.");
+      }
+    }
     if (item.type === "training") {
       const needed = item.amount === "both" ? 2 : 1;
       if (trainingRightsForTeam(teamId).length < needed) {
         throw new Error("That team does not have enough next trainings to trade.");
       }
     }
-    if (item.type === "upgrade" && carUpgradeRightsForTeam(teamId).length < 1) {
-      throw new Error("That team does not have a next upgrade to trade.");
-    }
+    if (item.type === "upgrade") throw new Error("Weekly car upgrades are no longer tradable.");
     if (item.type === "draft_pick") {
       const draft = readDraftState.get();
       if (draft?.status === "active") {
@@ -6195,6 +6291,14 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function assertTeamTradeItemsAvailable(teamId, items) {
+    for (const carIndex of [0,1]) {
+      const points = items.filter((item) => item.type === "car_points" && item.carIndex === carIndex)
+        .reduce((sum,item) => sum + item.points,0);
+      const car = readCar.get(teamId, carIndex);
+      if (points > car.total_points - car.speed - car.handling - car.durability) {
+        throw new Error("That car does not have enough unallocated points to trade.");
+      }
+    }
     const trainingSlotsRequested = items.reduce((sum, item) => (
       item.type === "training" ? sum + (item.amount === "both" ? 2 : 1) : sum
     ), 0);
@@ -6277,6 +6381,15 @@ export function createLeagueStore(path = ":memory:") {
 
   function transferAcceptedTradeItems(fromTeamId, toTeamId, items, tradeOfferId, now) {
     for (const item of items) {
+      if (item.type === "car_points") {
+        assertTradeAssetAvailable(fromTeamId, item);
+        const target = readCar.get(toTeamId, item.recipientCarIndex);
+        if (!target || target.total_points + item.points > 30) throw new Error("A car cannot own more than 30 points.");
+        database.prepare("UPDATE cars SET total_points = total_points - ?, calibration_locked_period = NULL WHERE team_id = ? AND car_index = ?")
+          .run(item.points, fromTeamId, item.carIndex);
+        database.prepare("UPDATE cars SET total_points = total_points + ?, calibration_locked_period = NULL WHERE team_id = ? AND car_index = ?")
+          .run(item.points, toTeamId, item.recipientCarIndex);
+      }
       if (item.type === "training") {
         transferTrainingRights(fromTeamId, toTeamId, item.amount === "both" ? 2 : 1, tradeOfferId, now);
       }
@@ -6304,7 +6417,14 @@ export function createLeagueStore(path = ":memory:") {
         const amount = item.amount === "both" ? "both" : "single";
         return { type: "training", amount };
       }
-      if (item?.type === "upgrade") return { type: "upgrade" };
+      if (item?.type === "car_points") {
+        const points = Number(item.points), carIndex = Number(item.carIndex), recipientCarIndex = Number(item.recipientCarIndex);
+        if (!Number.isInteger(points) || points < 1 || points > 27 || ![0,1].includes(carIndex) || ![0,1].includes(recipientCarIndex)) {
+          throw new Error("Choose a sending car, receiving car, and whole number of car points.");
+        }
+        return { type:"car_points", points, carIndex, recipientCarIndex };
+      }
+      if (item?.type === "upgrade") throw new Error("Weekly car upgrades have been replaced by car points.");
       if (item?.type === "draft_pick") {
         const round = Number(item.round);
         if (!Number.isInteger(round) || round < 1 || round > 6) {
@@ -6322,6 +6442,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function tradeItemKey(item) {
+    if (item.type === "car_points") return `car_points:${item.carIndex}`;
     if (item.type === "driver") return `driver:${item.racerId}`;
     if (item.type === "training") return `training:${item.amount}`;
     if (item.type === "upgrade") return "upgrade";
@@ -6330,6 +6451,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function tradeItemLabel(item, racers = new Map()) {
+    if (item.type === "car_points") return `${item.points} car point(s): Car ${item.carIndex + 1} to Car ${item.recipientCarIndex + 1}`;
     if (item.type === "driver") return `Driver: ${racers.get(item.racerId)?.name || item.racerId}`;
     if (item.type === "training") return `Next training: ${item.amount === "both" ? "Both" : "Single"}`;
     if (item.type === "upgrade") return "Next Upgrade";
@@ -6374,7 +6496,10 @@ export function createLeagueStore(path = ":memory:") {
       const keys = [];
       if (trainingRightsForTeam(team.id, developmentWeek).length >= 1) keys.push("training:single");
       if (trainingRightsForTeam(team.id, developmentWeek).length >= 2) keys.push("training:both");
-      if (carUpgradeRightsForTeam(team.id, developmentWeek).length >= 1) keys.push("upgrade");
+      for (const carIndex of [0,1]) {
+        const car = readCar.get(team.id, carIndex);
+        if (car.total_points > car.speed + car.handling + car.durability) keys.push(`car_points:${carIndex}`);
+      }
       for (let round = 1; round <= 6; round += 1) {
         if (nextDraftPickRight(team.id, round, draftSeason)) keys.push(`draft_pick:${round}`);
       }
@@ -6845,6 +6970,8 @@ export function createLeagueStore(path = ":memory:") {
     database.exec("BEGIN IMMEDIATE");
     try {
       const now = new Date().toISOString();
+      assertTeamTradeItemsAvailable(offer.offering_team_id, offeredItems);
+      assertTeamTradeItemsAvailable(offer.receiving_team_id, requestedItems);
       for (const racerId of offeredIds) assignRacer.run(offer.receiving_team_id, racerId);
       for (const racerId of requestedIds) assignRacer.run(offer.offering_team_id, racerId);
       applyVeteranForRookieCoachBonus(offer.offering_team_id, offered, requested);
@@ -7225,6 +7352,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function getRaceCenter(season = 1) {
+    maintainCalibrationHistory();
     applyDueDevelopment();
     return structuredClone(cachedRead(`race-center:${season}`, () => buildRaceCenter(season), 1000));
   }
@@ -7332,6 +7460,8 @@ export function createLeagueStore(path = ":memory:") {
       weeksPerSeason: WEEKS_PER_SEASON,
       racesPerWeek: RACES_PER_WEEK,
       seasonRaces: SEASON_RACES,
+      calibration: getCalibration(),
+      calibrationHistory: getCalibrationHistory(season),
       seasonRacesRun,
       racesRun,
       trackName,
@@ -7391,6 +7521,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function beginNextSeason() {
+    maintainCalibrationHistory();
     const runtime = readRuntime.get();
     if (runtime.active_race_id !== null) {
       throw new Error("A new season cannot begin while a race is happening.");
@@ -7419,6 +7550,7 @@ export function createLeagueStore(path = ":memory:") {
       relegateFreeAgents.run();
       cancelPendingTrades.run(new Date().toISOString());
       setActiveSeason.run(nextSeason, new Date().toISOString());
+      database.exec("UPDATE cars SET speed = 4, handling = 4, durability = 4, total_points = 12, calibration_locked_period = NULL");
       database.exec("COMMIT");
     } catch (error) {
       database.exec("ROLLBACK");
@@ -7930,65 +8062,10 @@ export function createLeagueStore(path = ":memory:") {
     };
   }
 
-  function chooseWeeklyCarUpgrade(teamId, carIndex, optionIndex, week = currentDevelopmentWeekKey(), slot = 0) {
-    const now = new Date();
-    applyDueDevelopment(now);
-    assertDevelopmentSeasonStarted(week);
-    assertDevelopmentChoiceOpen(week, now);
-    if (!teams.some((team) => team.id === teamId)) throw new Error("Unknown team.");
-    const existingChoices = readTeamCarUpgradeChoices.all(week, teamId);
-    if (existingChoices.some((choice) => choice.applied_at)) {
-      throw new Error("This team's weekly car upgrade has already been applied.");
-    }
-    const ownedSlots = carUpgradeRightsForTeam(teamId, week);
-    if (!ownedSlots.length) throw new Error("This team does not currently own a weekly car upgrade.");
-    const slotNumber = Number(slot);
-    if (!Number.isInteger(slotNumber) || slotNumber < 0 || slotNumber >= ownedSlots.length) {
-      throw new Error("Unknown weekly car upgrade slot.");
-    }
-    if (![0, 1].includes(carIndex) || !readCar.get(teamId, carIndex)) {
-      throw new Error("Unknown car.");
-    }
-    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex > 2) {
-      throw new Error("Unknown weekly car upgrade option.");
-    }
-    const upgradeWeek = ensureCarUpgradeWeek(week);
-    const stat = [
-      upgradeWeek.option_one,
-      upgradeWeek.option_two,
-      upgradeWeek.option_three,
-    ][optionIndex];
-    const car = readCar.get(teamId, carIndex);
-    if (car[stat] >= 10) throw new Error(`That car's ${stat} is already at 10.`);
-
-    database.exec("BEGIN IMMEDIATE");
-    try {
-      insertCarUpgradeChoice.run(
-        week,
-        teamId,
-        slotNumber,
-        optionIndex,
-        carIndex,
-        stat,
-        new Date().toISOString(),
-      );
-      applyChoiceIfDue(week, now);
-      database.exec("COMMIT");
-    } catch (error) {
-      database.exec("ROLLBACK");
-      throw error;
-    }
-    return {
-      week,
-      teamId,
-      slot: slotNumber,
-      carIndex,
-      stat,
-      appliedAt: readTeamCarUpgradeChoices.all(week, teamId)
-        .find((choice) => choice.slot === slotNumber)?.applied_at || null,
-      car: readCar.get(teamId, carIndex),
-    };
+  function chooseWeeklyCarUpgrade() {
+    throw new Error("Weekly car upgrades have been replaced by calibration.");
   }
+
 
   function publicMediaEntry(row) {
     if (!row) return null;
@@ -8235,6 +8312,10 @@ export function createLeagueStore(path = ":memory:") {
     getMediaEntries,
     getRookieDraft,
     getDevelopment,
+    getCalibration,
+    getCalibrationHistory,
+    maintainCalibrationHistory,
+    saveCarCalibration,
     getRace,
     getRaceTiming,
     getActiveRaceTiming,

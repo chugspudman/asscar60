@@ -20,12 +20,12 @@ const SECTION_TABS = {
     { view: "relay", label: "Relay Plan" },
     { view: "roster", label: "Roster" },
     { view: "cars", label: "Cars" },
+    { view: "training", label: "Training" },
   ],
   office: [
     { view: "draft", label: "Draft" },
     { view: "brand", label: "Brand" },
     { view: "moves", label: "Admin" },
-    { view: "development", label: "Development" },
     { view: "stewards", label: "Stewards" },
   ],
   league: [
@@ -99,6 +99,10 @@ const state = {
   lineups: defaultLineups,
   carNames: defaultCarNamesByTeam,
   cars: {},
+  calibration: { open:false },
+  calibrationDrafts: {},
+  calibrationErrors: {},
+  calibrationHistory: [],
   race: null,
   timer: null,
   startedAt: 0,
@@ -283,7 +287,6 @@ const elements = {
   developmentTeam: document.querySelector("#development-team"),
   developmentMessage: document.querySelector("#development-message"),
   upgradeOptions: document.querySelector("#upgrade-options"),
-  carUpgradeOptions: document.querySelector("#car-upgrade-options"),
   developmentHistory: document.querySelector("#development-history"),
   stewardsPanel: document.querySelector("#stewards-view"),
   stewardsMessage: document.querySelector("#stewards-message"),
@@ -2047,32 +2050,87 @@ function racerIdentityMarkup(racer) {
     </div>`;
 }
 
+function currentCalibration() {
+  const period = state.raceCenter.calibration || state.calibration;
+  return { ...period, open:period?.open === true && Date.now() < Date.parse(period.closesAt) && !state.raceCenter.raceActive };
+}
+
 function renderGarageCars() {
   const team = teams.find((item) => item.id === state.selectedTeamId) || managedTeam();
   const carNames = state.carNames[team.id] || defaultCarNames(team);
   const cars = state.cars[team.id] || [];
-  elements.garageCars.innerHTML = carNames.map((carName, index) => `
-    <article class="garage-car panel" style="--team-color:${team.color}">
-      <span class="garage-car-number">Car ${index + 1}</span>
-      <div class="garage-car-name" data-car-editor="${index}">
-        <h2><span>${team.short}</span> <strong data-car-display="${index}">${escapeHtml(carName)}</strong></h2>
-        <input type="text" maxlength="32" value="${escapeAttribute(carName)}" data-car-input="${index}" aria-label="${team.short} car ${index + 1} name" hidden>
-        <button type="button" class="edit-car-name" data-edit-garage-car="${index}" aria-label="Edit ${team.short} ${escapeAttribute(carName)} name" title="Edit car name" ${state.raceCenter.raceActive ? "disabled" : ""}>
-          <span aria-hidden="true">&#9998;</span>
-        </button>
-      </div>
-      <p>Registered to ${team.name}. Both machines began as identical team-standard chassis.</p>
-      <p class="save-message" data-car-message="${index}"></p>
-      ${carStatsMarkup(cars[index])}
-    </article>
-  `).join("");
+  const period = currentCalibration();
+  const canManage = managedTeamId() === team.id;
+  document.querySelector("#calibration-status").textContent = period.open
+    ? "The calibration period is open." : "The calibration period is closed.";
+  elements.garageCars.innerHTML = carNames.map((carName, index) => {
+    const car = cars[index] || {speed:4,handling:4,durability:4,totalPoints:12};
+    const key = `${team.id}:${index}`;
+    let draft = state.calibrationDrafts[key];
+    if (!period.open || draft?.period !== period.period || draft?.totalPoints !== car.totalPoints) {
+      delete state.calibrationDrafts[key];
+      draft = null;
+    }
+    const values = draft || car;
+    const locked = !draft && car.lockedPeriod === period.period;
+    const enabled = period.open && canManage && !locked;
+    const free = (car.totalPoints ?? 12) - values.speed - values.handling - values.durability;
+    return `
+      <article class="garage-car panel" style="--team-color:${team.color}">
+        <span class="garage-car-number">Car ${index + 1}</span>
+        <div class="garage-car-name" data-car-editor="${index}">
+          <h2><span>${team.short}</span> <strong data-car-display="${index}">${escapeHtml(carName)}</strong></h2>
+          <input type="text" maxlength="32" value="${escapeAttribute(carName)}" data-car-input="${index}" aria-label="${team.short} car ${index + 1} name" hidden>
+          <button type="button" class="edit-car-name" data-edit-garage-car="${index}" aria-label="Edit ${escapeAttribute(carName)} name" title="Edit car name" ${state.raceCenter.raceActive ? "disabled" : ""}><span aria-hidden="true">&#9998;</span></button>
+        </div>
+        <p>Registered to ${escapeHtml(team.name)}.</p>
+        <p class="save-message" data-car-message="${index}"></p>
+        <p class="calibration-free-points">${free} free points</p>
+        <div class="calibration-fields">
+          <div class="car-ratings">
+            ${["speed","handling","durability"].map((stat)=>`
+              <div class="rating">
+                <span class="rating-label">${stat === "speed" ? "SPD" : stat === "handling" ? "HDL" : "DUR"}</span>
+                <strong class="rating-value">${values[stat]}</strong>
+                <div class="calibration-stepper">
+                  <button type="button" data-calibrate-car="${index}" data-calibrate-stat="${stat}" data-calibrate-delta="-1" aria-label="Decrease Car ${index+1} ${stat}" ${!enabled || values[stat] <= 1 ? "disabled" : ""}>-</button>
+                  <button type="button" data-calibrate-car="${index}" data-calibrate-stat="${stat}" data-calibrate-delta="1" aria-label="Increase Car ${index+1} ${stat}" ${!enabled || free <= 0 || values[stat] >= 10 ? "disabled" : ""}>+</button>
+                </div>
+              </div>`).join("")}
+          </div>
+          <button type="button" class="primary-button calibration-lock${locked ? " calibration-locked" : ""}" data-lock-calibration="${index}" ${!period.open || !canManage ? "disabled" : ""}>${locked ? "Edit" : "Lock In"}</button>
+        </div>
+        <p class="calibration-save-message ${state.calibrationErrors[key] ? "error" : locked ? "save-message" : "muted"}" role="status">${escapeHtml(state.calibrationErrors[key] || (draft ? "Unsaved calibration changes." : locked ? "Calibration locked in." : ""))}</p>
+      </article>`;
+  }).join("");
+  renderCalibrationHistory();
+}
+
+
+function renderCalibrationHistory() {
+  const container = document.querySelector("#calibration-history");
+  if (!container) return;
+  const teamId = state.selectedTeamId;
+  const rows = (state.raceCenter.calibrationHistory || state.calibrationHistory || [])
+    .filter((row) => row.teamId === teamId);
+  const weeks = [...new Set(rows.map((row) => row.week))].sort((a,b) => b-a);
+  const names = state.carNames[teamId] || [];
+  container.innerHTML = weeks.length ? weeks.map((week) => `
+    <div class="calibration-history-week">
+      <h3>Week ${week}</h3>
+      <table class="calibration-history-table">
+        <thead><tr><th scope="col">Car</th><th scope="col">Speed</th><th scope="col">Handling</th><th scope="col">Durability</th></tr></thead>
+        <tbody>${rows.filter((row)=>row.week === week).sort((a,b)=>a.carIndex-b.carIndex).map((row)=>`
+          <tr><th scope="row">Car ${row.carIndex+1}: ${escapeHtml(names[row.carIndex] || "")}</th><td>${row.speed}</td><td>${row.handling}</td><td>${row.durability}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>`).join("") : '<p class="muted">No calibration periods have been recorded this season yet.</p>';
 }
 
 function carStatsMarkup(car = {}) {
   const stats = [
-    ["SPD", car.speed ?? 3, "Speed"],
-    ["HDL", car.handling ?? 3, "Handling"],
-    ["DUR", car.durability ?? 3, "Durability"],
+    ["SPD", car.speed ?? 4, "Speed"],
+    ["HDL", car.handling ?? 4, "Handling"],
+    ["DUR", car.durability ?? 4, "Durability"],
   ];
   return `
     <div class="car-ratings">
@@ -3312,6 +3370,7 @@ function tradeItemLabels(offer, side) {
 }
 
 function tradeItemKey(item) {
+  if (item.type === "car_points") return `car_points:${item.carIndex}`;
   if (item.type === "driver") return `driver:${item.racerId}`;
   if (item.type === "training") return `training:${item.amount}`;
   if (item.type === "upgrade") return "upgrade";
@@ -3346,6 +3405,9 @@ function canAddTradeItem(teamId, item, items) {
   if (!teamId) return false;
   if (items.length >= MAX_TRADE_ITEMS_PER_SIDE) return false;
   if (item.type === "driver") return availableTradeDrivers(teamId, items).length > 0;
+  if (item.type === "car_points" && item.carIndex === undefined) {
+    return [0,1].some((carIndex) => canAddTradeItem(teamId, {type:"car_points",carIndex}, items));
+  }
   const unavailable = unavailableTradeItemKeys(teamId);
   const tradable = tradableTradeItemKeys(teamId);
   const used = new Set(items.map(tradeItemKey));
@@ -3368,7 +3430,7 @@ function tradeItemTypeOptions(teamId, items) {
     ["driver", "Driver", canAddTradeItem(teamId, { type: "driver" }, items)],
     ["training", "Next Training", canAddTradeItem(teamId, { type: "training", amount: "single" }, items)
       || canAddTradeItem(teamId, { type: "training", amount: "both" }, items)],
-    ["upgrade", "Next Upgrade", canAddTradeItem(teamId, { type: "upgrade" }, items)],
+    ["car_points", "Car Points", canAddTradeItem(teamId, { type: "car_points" }, items)],
     ["draft_pick", "Opening Draft Pick", [1, 2, 3, 4, 5, 6].some((round) => canAddTradeItem(teamId, { type: "draft_pick", round }, items))],
   ];
   return typeOptions.map(([value, label, enabled]) => `
@@ -3379,6 +3441,19 @@ function tradeItemTypeOptions(teamId, items) {
 function renderTradeItemRow(side, item, teamId, items) {
   const sideLabel = side === "offer" ? "Offer" : "Request";
   const siblingItems = items.filter((entry) => entry.id !== item.id);
+  if (item.type === "car_points") {
+    const targetId = side === "offer" ? currentTradeRecipientTeam()?.id : managedTeamId();
+    const car = state.cars[teamId]?.[item.carIndex];
+    const free = car ? car.totalPoints - car.speed - car.handling - car.durability : 0;
+    const carOptions = (ownerId, selected, source) => [0,1].map((index) => `
+      <option value="${index}" ${Number(selected) === index && selected !== undefined ? "selected" : ""} ${source && !canAddTradeItem(ownerId,{type:"car_points",carIndex:index},siblingItems) ? "disabled" : ""}>Car ${index+1}: ${escapeHtml(state.carNames[ownerId]?.[index] || "")}</option>`).join("");
+    return `<div class="trade-builder-row pending car-points-trade" data-trade-side="${side}" data-trade-item-id="${item.id}">
+      <label>From car<select data-trade-points-car><option value="">Choose car</option>${carOptions(teamId,item.carIndex,true)}</select></label>
+      <label>Points<select data-trade-points-count><option value="">Choose points</option>${Array.from({length:free},(_,i)=>`<option value="${i+1}" ${item.points === i+1 ? "selected" : ""}>${i+1}</option>`).join("")}</select></label>
+      <label>To car<select data-trade-points-recipient><option value="">Choose car</option>${carOptions(targetId,item.recipientCarIndex,false)}</select></label>
+      <button type="button" class="trade-remove-item" data-remove-trade-item aria-label="Remove car points item">x</button>
+    </div>`;
+  }
   if (!item.type) {
     return `
       <div class="trade-builder-row pending" data-trade-side="${side}" data-trade-item-id="${item.id}">
@@ -3510,7 +3585,7 @@ function removeTradeBuilderItem(side, id) {
 
 function tradeItemsReady(items) {
   return items.length > 0 && items.every((item) => (
-    item.type === "upgrade"
+    (item.type === "car_points" && Number.isInteger(item.points) && item.points > 0 && [0,1].includes(item.carIndex) && [0,1].includes(item.recipientCarIndex))
     || (item.type === "driver" && item.racerId)
     || (item.type === "training" && item.amount)
     || (item.type === "draft_pick" && item.round)
@@ -3613,13 +3688,9 @@ function renderDevelopment() {
   const teamChoices = state.development.choices
     .filter((choice) => choice.team_id === actingTeamId)
     .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0));
-  const carChoices = state.development.carChoices
-    .filter((choice) => choice.team_id === actingTeamId)
-    .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0));
   const eligibleIds = new Set(state.development.eligibleRacerIdsByTeam?.[actingTeamId] || []);
   const eligibleRacers = actingTeam?.drivers.filter((driver) => eligibleIds.has(driver.id)) || [];
   const trainingSlots = state.development.trainingSlotsByTeam?.[actingTeamId] || [{ slot: 0 }, { slot: 1 }];
-  const carUpgradeSlots = state.development.carUpgradeSlotsByTeam?.[actingTeamId] || [{ slot: 0 }];
   const developmentChoicesOpen = state.development.choicesOpen === true;
   const finalDevelopmentWeek = state.development.finalWeek === true;
   const trainingApplied = teamChoices.some((choice) => choice.applied_at);
@@ -3629,6 +3700,7 @@ function renderDevelopment() {
     || eligibleRacers.length < trainingSlots.length;
 
   elements.developmentTeam.textContent = managedTeamLabel();
+  elements.developmentWeek.textContent = `Week ${state.development.week || 1}`;
 
   const statOptions = (selectedIndex = 0) => state.development.options.map((stat, optionIndex) => `
     <option value="${optionIndex}" ${Number(selectedIndex) === optionIndex ? "selected" : ""}>${titleCase(stat)}</option>
@@ -3672,7 +3744,7 @@ function renderDevelopment() {
         : finalDevelopmentWeek
           ? "No trainings may be completed during the final week of the season."
         : !developmentChoicesOpen
-          ? "Training and Upgrade choices open once the first race of the season has begun."
+          ? "Training choices open once the first race of the season has begun."
         : !trainingSlots.length
           ? "This team has traded away its weekly trainings."
           : eligibleRacers.length < trainingSlots.length
@@ -3681,44 +3753,7 @@ function renderDevelopment() {
     </article>`;
   updateTrainingLockEligibility();
 
-  const carApplied = carChoices.some((choice) => choice.applied_at);
-  const carUpgradeUnavailable = !developmentChoicesOpen || carApplied || !carUpgradeSlots.length;
-  const carChoiceForSlot = (slot) => carChoices.find((choice) => Number(choice.slot || 0) === slot);
-  const carUpgradeRows = carUpgradeSlots.map((slotInfo, index) => {
-    const choice = carChoiceForSlot(index) || carChoices[index] || null;
-    return `
-      <p class="development-choice-line">
-        Increase the
-        <select data-car-training-stat="${index}" aria-label="Weekly car upgrade ${index + 1} trait" ${carUpgradeUnavailable ? "disabled" : ""}>
-          ${state.development.carOptions.map((stat, optionIndex) => `
-            <option value="${optionIndex}" ${choice?.option_index === optionIndex ? "selected" : ""}>${titleCase(stat)}</option>
-          `).join("")}
-        </select>
-        of
-        <select data-upgrade-car="${index}" aria-label="Weekly upgrade ${index + 1} car" ${carUpgradeUnavailable ? "disabled" : ""}>
-          ${state.carNames[actingTeamId].map((name, carIndex) => `
-            <option value="${carIndex}" ${choice?.car_index === carIndex ? "selected" : ""}>${actingTeam.short} ${escapeHtml(name)}</option>
-          `).join("")}
-        </select>
-        by 1.
-      </p>`;
-  }).join("");
-  elements.carUpgradeOptions.innerHTML = `
-    <article class="development-choice-card ${carUpgradeUnavailable ? "unavailable" : ""} ${developmentChoicesOpen && carChoices.length && !carApplied ? "selected" : ""}">
-      ${carUpgradeRows || `<p class="muted">This team does not currently own a weekly car upgrade.</p>`}
-      <button class="primary-button" data-car-upgrade-option ${carUpgradeUnavailable ? "disabled" : ""}>
-        ${carApplied ? "Upgrade applied" : carChoices.length ? "Update lock-in" : "Lock In"}
-      </button>
-      <p class="muted">${carApplied
-        ? "This week's car upgrade has already been applied."
-        : finalDevelopmentWeek
-          ? "No upgrade may be completed during the final week of the season."
-        : !developmentChoicesOpen
-          ? "Training and Upgrade choices open once the first race of the season has begun."
-        : !carUpgradeSlots.length
-          ? "This team has traded away its weekly car upgrade."
-          : "The upgrade locks in now and applies Sunday at 11:59 PM Eastern. You can change it until then."}</p>
-    </article>`;
+
 
   const trainingHistory = state.development.choices.map((choice) => {
       const team = teams.find((item) => item.id === choice.team_id);
@@ -3735,23 +3770,11 @@ function renderDevelopment() {
           <span class="development-result ${applied ? choice.result : "pending"}">${applied ? choice.result : "pending"}</span>
         </article>`;
     });
-  const carHistory = state.development.carChoices.map((choice) => {
-    const team = teams.find((item) => item.id === choice.team_id);
-    const carName = state.carNames[choice.team_id]?.[choice.car_index] || `Car ${choice.car_index + 1}`;
-    const applied = Boolean(choice.applied_at);
-    return `
-      <article class="development-record">
-        <span class="team-code">${team.short}</span>
-        <p>${escapeHtml(applied
-          ? `${team.short} ${carName} gained +1 ${titleCase(choice.stat)}.`
-          : `${team.short} ${carName} is locked in for a ${titleCase(choice.stat)} Upgrade.`)}</p>
-        <span class="development-result ${applied ? "improved" : "pending"}">${applied ? "upgraded" : "pending"}</span>
-      </article>`;
-  });
-  elements.developmentHistory.innerHTML = trainingHistory.length || carHistory.length
-    ? [...trainingHistory, ...carHistory].join("")
-    : `<p class="muted">No team has selected a weekly upgrade yet.</p>`;
+  elements.developmentHistory.innerHTML = trainingHistory.length
+    ? trainingHistory.join("")
+    : '<p class="muted">No team has selected a weekly training yet.</p>';
 }
+
 
 function selectTeam(teamId) {
   state.selectedTeamId = teamId;
@@ -3786,6 +3809,8 @@ async function loadLeagueState() {
   state.lineups = { ...defaultLineups, ...saved.lineups };
   state.carNames = { ...defaultCarNamesByTeam, ...saved.carNames };
   state.cars = saved.cars || {};
+  state.calibration = saved.calibration || { open:false };
+  state.calibrationHistory = saved.calibrationHistory || [];
   state.pitCoaches = saved.pitCoaches || {};
   state.compuzoidStintLimits = saved.compuzoidStintLimits || {};
   state.stainOfSinTeamIds = saved.stainOfSinTeamIds || [];
@@ -4580,6 +4605,55 @@ elements.saveLineup.addEventListener("click", async () => {
 });
 
 elements.garageCars.addEventListener("click", async (event) => {
+  const adjust = event.target.closest("[data-calibrate-car]");
+  const lock = event.target.closest("[data-lock-calibration]");
+  if (!adjust && !lock) return;
+  const period = currentCalibration();
+  const teamId = managedTeamId();
+  if (!period.open || state.selectedTeamId !== teamId) return;
+  const index = Number(adjust?.dataset.calibrateCar ?? lock.dataset.lockCalibration);
+  const car = state.cars[teamId][index];
+  const key = `${teamId}:${index}`;
+  const draft = state.calibrationDrafts[key];
+  const locked = !draft && car.lockedPeriod === period.period;
+  delete state.calibrationErrors[key];
+  if (adjust) {
+    if (locked || adjust.disabled) return;
+    const values = draft || { ...car, period:period.period };
+    const stat = adjust.dataset.calibrateStat;
+    const delta = Number(adjust.dataset.calibrateDelta);
+    const free = car.totalPoints - values.speed - values.handling - values.durability;
+    if (values[stat]+delta < 1 || values[stat]+delta > 10 || (delta > 0 && free < 1)) return;
+    values[stat] += delta;
+    state.calibrationDrafts[key] = values;
+    renderGarageCars();
+    return;
+  }
+  if (locked) {
+    state.calibrationDrafts[key] = { ...car, period:period.period };
+    renderGarageCars();
+    return;
+  }
+  lock.disabled = true;
+  try {
+    const values = draft || car;
+    const response = await fetch("/api/cars/calibrate", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({carIndex:index,stats:{speed:values.speed,handling:values.handling,durability:values.durability}}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not save calibration.");
+    state.cars = result.cars;
+    state.calibration = result.calibration;
+    state.raceCenter.calibration = result.calibration;
+    delete state.calibrationDrafts[key];
+    await loadTransactions();
+    renderTransactions();
+  } catch (error) { state.calibrationErrors[key] = error.message; }
+  finally { renderGarageCars(); }
+});
+
+elements.garageCars.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-edit-garage-car]");
   if (!button) return;
   const carIndex = Number(button.dataset.editGarageCar);
@@ -5081,6 +5155,14 @@ elements.tradeRecipient?.addEventListener("click", (event) => {
 function updateTradeBuilderItem(event) {
   const { side, item } = tradeBuilderItemFromEvent(event);
   if (!item) return;
+  for (const [selector, key] of [["[data-trade-points-car]","carIndex"],["[data-trade-points-count]","points"],["[data-trade-points-recipient]","recipientCarIndex"]]) {
+    if (event.target.matches(selector)) {
+      item[key] = event.target.value === "" ? undefined : Number(event.target.value);
+      if (key === "carIndex") item.points = undefined;
+      renderTradeBuilder();
+      return;
+    }
+  }
   if (event.target.matches("[data-trade-type]")) {
     item.type = event.target.value || "";
     if (item.type === "upgrade") {
@@ -5357,50 +5439,7 @@ elements.upgradeOptions.addEventListener("click", async (event) => {
   }
 });
 
-elements.carUpgradeOptions.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-car-upgrade-option]");
-  if (!button) return;
-  if (button.disabled) return;
-  const statSelects = [...elements.carUpgradeOptions.querySelectorAll("[data-car-training-stat]")]
-    .sort((a, b) => Number(a.dataset.carTrainingStat) - Number(b.dataset.carTrainingStat));
-  const carSelects = [...elements.carUpgradeOptions.querySelectorAll("[data-upgrade-car]")]
-    .sort((a, b) => Number(a.dataset.upgradeCar) - Number(b.dataset.upgradeCar));
-  button.disabled = true;
-  elements.developmentMessage.textContent = "Installing weekly car upgrade...";
-  try {
-    const results = [];
-    for (const [slot, carSelect] of carSelects.entries()) {
-      const response = await fetch("/api/development/choose-car", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teamId: managedTeamId(),
-          slot,
-          carIndex: Number(carSelect.value),
-          optionIndex: Number(statSelects[slot]?.value),
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Could not lock in car upgrade.");
-      results.push(result);
-    }
-    await Promise.all([loadLeagueState(), loadDevelopment()]);
-    renderGarageCars();
-    renderDevelopment();
-    const summary = results.map((result) => {
-      const carName = state.carNames[result.teamId][result.carIndex];
-      return result.appliedAt
-        ? `${carName} improved ${titleCase(result.stat)}`
-        : `${carName} for ${titleCase(result.stat)}`;
-    }).join("; ");
-    elements.developmentMessage.textContent = results.some((result) => result.appliedAt)
-      ? `${summary}.`
-      : `Upgrade locked in: ${summary}. It will take effect Sunday at 11:59 PM Eastern.`;
-  } catch (error) {
-    elements.developmentMessage.textContent = error.message;
-    button.disabled = false;
-  }
-});
+
 
 async function runStewardsAction(action, button = null) {
   const routes = {
@@ -5538,6 +5577,8 @@ async function hydrateDeferredStartupData() {
 }
 
 async function syncRaceCenter() {
+  const previousCalibrationHistory = JSON.stringify(state.raceCenter.calibrationHistory || state.calibrationHistory);
+  const previousCalibration = JSON.stringify(state.raceCenter.calibration || state.calibration);
   const previousArchive = (state.raceCenter.races || []).map((race) => race.id).join(",");
   const priorUnavailableRelayDrivers = JSON.stringify(state.raceCenter.unavailableRelayDrivers || {});
   const ceremonyWasAvailable = Boolean(state.raceCenter.seasonComplete && state.raceCenter.champions);
@@ -5546,6 +5587,7 @@ async function syncRaceCenter() {
   const priorRelayLockReason = relayPlanRaceLockReason();
   await Promise.all([loadRaceCenter(), loadDarkSacrifice()]);
   const archiveChanged = previousArchive !== (state.raceCenter.races || []).map((race) => race.id).join(",");
+  if (previousCalibrationHistory !== JSON.stringify(state.raceCenter.calibrationHistory)) renderCalibrationHistory();
   if (archiveChanged) {
     renderRaceArchive();
     renderLeague();
@@ -5555,6 +5597,7 @@ async function syncRaceCenter() {
     else renderLineupEditor();
   }
   const nextRelayLockReason = relayPlanRaceLockReason();
+  if (previousCalibration !== JSON.stringify(state.raceCenter.calibration)) renderGarageCars();
   const darkSacrificeNewlyResolved = !darkSacrificeWasResolved
     && state.darkSacrifice.status === "resolved";
   const darkSacrificeNewlyAvailable = !darkSacrificeWasVoting

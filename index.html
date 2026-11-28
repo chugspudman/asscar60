@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ASSCAR60</title>
-  <link rel="stylesheet" href="/styles.css?v=race-car-selection-20261124">
+  <link rel="stylesheet" href="/styles.css?v=calibration-history-20261128">
 </head>
 <body>
   <section id="auth-view" class="auth-view">
@@ -103,7 +103,7 @@
             <a href="#rules-driver-analytics">Driver Analytics</a>
             <a href="#rules-overtaking">Overtaking</a>
             <a href="#rules-driver-conditions">Driver Conditions</a>
-            <a href="#rules-trainings-upgrades">Trainings and Upgrades</a>
+            <a href="#rules-trainings-upgrades">Training and Calibration</a>
             <a href="#rules-trades">Trades</a>
             <a href="#rules-courses">Courses</a>
             <a href="#rules-weather">Weather</a>
@@ -120,7 +120,7 @@
             <p>Each manager controls 1 team. Each team fields two cars per race. The races are relays, and each car must have 3 drivers across the course of the race. Drivers cannot switch cars during a race, but their car assignment and relay position can be changed outside of the race.</p>
             <p>The driver who begins the race is the Opener, the one who finishes the race is the Closer, and the Bridge is between them. The minimum number of laps allowed for a driver's stint is 5, and the maximum is 40, meaning different drivers can be racing for different lengths of time as determined by the manager.</p>
             <p>Relay plans may be edited before qualifiers begin. Once qualifiers begin, relay plans are locked until after that race.</p>
-            <p>Managers will manage their team by drafting drivers, selecting a Pit Coach specialty, setting relay plans, completing trades with other managers, voting on league events, and selecting weekly driver trainings and car upgrades.</p>
+            <p>Managers manage their team by drafting drivers, selecting a Pit Coach specialty, setting relay plans, completing trades, voting on league events, training drivers, and calibrating cars.</p>
           </section>
 
           <section id="rules-drafts">
@@ -242,22 +242,25 @@
           </section>
 
           <section id="rules-trainings-upgrades">
-            <h3>Trainings and Upgrades</h3>
-            <p>Each week, every manager is given the same randomized set of 3 driver training options and the same randomized set of 3 car upgrade options.</p>
-            <p>Each team normally receives 2 weekly driver trainings and 1 weekly car upgrade. These opportunities may be traded.</p>
-            <p>Trainings are for drivers, and upgrades are for cars. Car stats do not have a cap, but each driver stat does. Driver stat caps are hidden and can only be discovered by training.</p>
+            <h3>Training and Calibration</h3>
+            <h4>Driver Training</h4>
+            <p>Training is found under Garage. Each week, managers receive the same 3 randomized training options and normally have 2 training opportunities, which may be traded. Driver stat caps are hidden and can be discovered by training; no stat can exceed 10.</p>
             <p>Every time a driver undergoes training, their Potential decreases by 1 unless a cap was discovered. When a stat cap is discovered it is publicly recorded on that driver's racer card with a small triangle in the top left corner of that stat tile.</p>
             <p>The only drivers eligible for a given week's training are the ones who participated in at least 1 race that week. The same driver cannot receive both weekly trainings in the same week. The same stat may be trained on two different drivers.</p>
-            <p>Trainings and upgrades are not available before the first race of the season begins. Once available, managers can lock in and edit their choices until 11:59 PM Eastern on the Sunday after that week's races, when the saved choices take effect. If a training or upgrade is not used during the week, it does not carry over to the following week.</p>
+            <p>Driver training opens after the season's first race begins. Choices remain editable until Sunday at 11:59 PM Eastern, when saved trainings take effect. There are only 3 training periods per season; no training is available in the final week. Unused trainings do not carry over.</p>
+            <h4>Car Calibration</h4>
+            <p>Each car starts each season with Speed 4, Handling 4, and Durability 4: 12 points in its own pool. All three stats must stay between 1 and 10. During calibration, use the plus and minus buttons on Garage's Cars page to move points between stats. Cars cannot share points. Unallocated points are shown above each car's stats.</p>
+            <p>Calibration opens after the opening draft is completed and before the first week's Monday, then on Saturday after each completed five-race week before the next week begins. It closes at midnight going from Sunday into Monday, Eastern time. Calibration is unavailable during a race. Lock In saves each car separately; Edit allows further changes before the period closes. Unsaved changes do not replace the last saved allocation.</p>
+            <p>Unallocated car points may be traded to a specified car on another team. Receiving points does not change saved stats outside calibration. At the start of each new season, all cars reset to 4/4/4 and 12 total points, regardless of trades or prior allocations. Permanent weekly car upgrades no longer occur.</p>
             <p>While stats can temporarily degrade during a race for both drivers and cars, those degradations completely resolve between races and are not permanent.</p>
           </section>
 
           <section id="rules-trades">
             <h3>Trades</h3>
             <p>Managers can propose trades with other managers through the Admin page. Managers can also exchange a currently-signed driver from their team in exchange for a Free Agent throughout the season.</p>
-            <p>Trades may include multiple drivers from each side. Trades may also include opening draft picks, weekly training opportunities, and weekly car upgrade opportunities.</p>
-            <p>A traded draft pick gives the receiving team the original team's pick in that round. A traded weekly training or upgrade gives the receiving team that opportunity for the relevant week.</p>
-            <p>If a driver, draft pick, training, or upgrade opportunity has already been traded away, it cannot be added to another trade offer unless it is reacquired.</p>
+            <p>Trades may include multiple drivers, opening draft picks, weekly training opportunities, and unallocated car points. A car-points offer specifies its sending car, number of points, and receiving car. Each car can own up to 30 points.</p>
+            <p>A traded draft pick transfers the original team's pick in that round. A traded training transfers that opportunity for the relevant week. Car-point trades transfer points between the specified cars without changing their allocated stats.</p>
+            <p>Assets already committed to a pending offer cannot be added to another offer. All assets must still be available when a trade is accepted.</p>
           </section>
 
           <section id="rules-courses">
@@ -487,7 +490,12 @@
       <div class="section-heading league-heading">
         <div><span class="eyebrow">Registered machines</span><h2>Your cars</h2></div>
       </div>
+      <p id="calibration-status" class="muted"></p>
       <div id="garage-cars" class="garage-cars"></div>
+      <section class="panel calibration-history-panel" aria-labelledby="calibration-history-title">
+        <div class="section-heading"><h2 id="calibration-history-title">Calibration History</h2></div>
+        <div id="calibration-history"></div>
+      </section>
     </section>
 
     <section id="league-view" class="view" data-section-view="league">
@@ -758,14 +766,14 @@
       </div>
     </section>
 
-    <section id="development-view" class="view" data-section-view="office">
+    <section id="training-view" class="view" data-section-view="garage">
       <div class="development-toolbar panel">
         <div>
           <span class="card-label">Your team</span>
           <strong id="development-team"></strong>
         </div>
         <div>
-          <span class="card-label">Upgrade period</span>
+          <span class="card-label">Training period</span>
           <strong id="development-week">Week 1</strong>
         </div>
         <p id="development-message" class="save-message" role="status"></p>
@@ -778,14 +786,6 @@
         <span>Shared choices / two per team</span>
       </div>
       <div id="upgrade-options" class="upgrade-options"></div>
-      <div class="section-heading development-heading car-upgrade-heading">
-        <div>
-          <span class="eyebrow">Sunday vehicle development</span>
-          <h2>Weekly Upgrade</h2>
-        </div>
-        <span>Shared choices / one per team</span>
-      </div>
-      <div id="car-upgrade-options" class="upgrade-options"></div>
       <section class="panel development-history-panel">
         <div class="section-heading">
           <div><span class="eyebrow">This week's work</span><h2>Development record</h2></div>
@@ -895,7 +895,7 @@
     <div class="brand-confirm-card">
       <span class="eyebrow">Season transition</span>
       <h2>Begin the next season?</h2>
-      <p>Career records, racer development, discovered stat caps, car upgrades, team brands, and league history will carry forward. Standings, drafts, weekly choices, and brand-change permissions will begin anew.</p>
+      <p>Career records, driver development, discovered stat caps, team brands, and league history will carry forward. Both cars reset to 4 Speed, 4 Handling, and 4 Durability with 12 points each. Standings, drafts, weekly choices, and brand-change permissions will begin anew.</p>
       <div class="brand-confirm-actions">
         <button id="cancel-next-season" type="button" class="secondary-button">Remain here</button>
         <button id="confirm-next-season" type="button" class="primary-button">Begin next season</button>
@@ -966,6 +966,6 @@
       </div>
     </form>
   </dialog>
-<script type="module" src="/app.mjs?v=race-car-selection-20261124"></script>
+<script type="module" src="/app.mjs?v=calibration-history-20261128"></script>
 </body>
 </html>

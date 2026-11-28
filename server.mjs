@@ -114,6 +114,7 @@ function runRaceScheduler() {
   if (schedulerBusy) return;
   schedulerBusy = true;
   try {
+    store.maintainCalibrationHistory();
     const activeRace = store.getActiveRaceTiming();
     if (activeRace) {
       const finishAt = new Date(activeRace.startAt).getTime() + activeRace.duration * 1000;
@@ -543,22 +544,19 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "POST" && requestedPath === "/api/development/choose-car") {
+    if (request.method === "POST" && requestedPath === "/api/cars/calibrate") {
       const input = await readJson(request);
       const manager = requireManager(request);
-      sendJson(
-        response,
-        201,
-        store.chooseWeeklyCarUpgrade(
-          manager.teamId,
-          Number(input.carIndex),
-          Number(input.optionIndex),
-          undefined,
-          Number(input.slot || 0),
-        ),
-      );
+      sendJson(response, 200, store.saveCarCalibration(manager.teamId, Number(input.carIndex), input.stats));
       return;
     }
+
+    if (request.method === "POST" && requestedPath === "/api/development/choose-car") {
+      requireManager(request);
+      sendJson(response, 410, { error:"Weekly car upgrades have been replaced by calibration." });
+      return;
+    }
+
 
     if (request.method === "POST" && requestedPath === "/api/trades") {
       const input = await readJson(request);

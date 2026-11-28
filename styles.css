@@ -1081,7 +1081,7 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .championship-row > span:last-child { font: 500 11px "DM Mono", monospace; }
 .garage-cars { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
 .garage-car { position: relative; overflow: hidden; min-height: 250px; padding: 28px; border-top: 7px solid var(--team-color); }
-.garage-car::after { content: ""; position: absolute; right: -55px; bottom: -90px; width: 230px; height: 230px; border: 28px solid var(--team-color); border-radius: 50%; opacity: .09; }
+.garage-car::after { content: ""; position: absolute; right: -55px; bottom: -90px; width: 230px; height: 230px; border: 28px solid var(--team-color); border-radius: 50%; opacity: .09; pointer-events: none; }
 .garage-car-number { color: var(--teal); font: 500 10px "DM Mono", monospace; text-transform: uppercase; }
 .garage-car-name { display: flex; align-items: center; gap: 8px; margin: 34px 0 8px; }
 .garage-car h2 { margin: 0; font-size: 32px; letter-spacing: -.05em; }
@@ -1090,6 +1090,31 @@ select { border: 1px solid var(--line); background: #0d1311; color: var(--ink); 
 .garage-car-name.editing .edit-car-name { background: var(--acid); color: var(--acid-ink); }
 .garage-car p { max-width: 520px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .car-ratings { display: grid; grid-template-columns: repeat(5, minmax(54px, 1fr)); gap: 7px; margin-top: 28px; }
+.calibration-free-points { color: var(--teal) !important; font: 500 12px "DM Mono", monospace; }
+.calibration-fields { display: flex; align-items: center; gap: 18px; }
+.calibration-fields .car-ratings { flex: 1; grid-template-columns: repeat(3, minmax(54px, 1fr)); margin-top: 0; }
+.calibration-stepper { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
+.calibration-stepper button { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); background: var(--tile-strong); cursor: pointer; }
+.calibration-stepper button:disabled { opacity: .3; cursor: not-allowed; }
+.calibration-lock { width: 92px; flex: 0 0 92px; padding-left: 0; padding-right: 0; }
+.garage-car .calibration-save-message { min-height: 21px; margin: 12px 0 0; }
+.calibration-lock:not(:disabled) { background: var(--team-color); color: #090d0c; }
+.calibration-lock.calibration-locked,
+.calibration-lock.calibration-locked:hover { box-shadow: none; transform: none; }
+.calibration-history-panel { margin-top: 20px; padding: 24px; }
+.calibration-history-week + .calibration-history-week { margin-top: 24px; }
+.calibration-history-week h3 { color: var(--teal); font: 500 13px "DM Mono", monospace; }
+.calibration-history-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.calibration-history-table th, .calibration-history-table td { padding: 12px 6px; text-align: center; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.calibration-history-table th:first-child { width: 40%; text-align: left; }
+.calibration-history-table thead th { color: var(--muted); font-size: 11px; font-weight: 500; }
+.trade-builder-row.car-points-trade { grid-template-columns: minmax(0, 1fr) minmax(64px, .45fr) minmax(0, 1fr) 32px; }
+.car-points-trade label { display: grid; gap: 5px; min-width: 0; font-size: 11px; }
+.car-points-trade select { min-width: 0; max-width: 100%; }
+@media (max-width: 420px) {
+  .calibration-fields { gap: 8px; }
+  .calibration-lock { padding: 12px 0; font-size: 11px; }
+}
 .car-system-placeholder { display: flex; gap: 7px; margin-top: 28px; }
 .car-system-placeholder span { padding: 7px 9px; background: var(--tile); font: 500 9px "DM Mono", monospace; text-transform: uppercase; }
 .racer-directory { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
