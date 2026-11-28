@@ -2224,6 +2224,10 @@ export function createLeagueStore(path = ":memory:") {
       WHEN 'The Lunar Service Road' THEN 'Suzuka'
       ELSE course_name
     END
+    WHERE course_name IN (
+      'The Glass Orchard', 'The Submerged Parliament',
+      'Saint Velocity''s Spiral', 'The Lunar Service Road'
+    )
   `);
   database.exec(`
     UPDATE racers
