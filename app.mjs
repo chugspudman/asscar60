@@ -3370,6 +3370,7 @@ function tradeItemLabels(offer, side) {
 }
 
 function tradeItemKey(item) {
+  if (item.type === "rookie_draft_pick") return `rookie_draft_pick:${item.round}`;
   if (item.type === "car_points") return `car_points:${item.carIndex}`;
   if (item.type === "driver") return `driver:${item.racerId}`;
   if (item.type === "training") return `training:${item.amount}`;
@@ -3432,6 +3433,7 @@ function tradeItemTypeOptions(teamId, items) {
       || canAddTradeItem(teamId, { type: "training", amount: "both" }, items)],
     ["car_points", "Car Points", canAddTradeItem(teamId, { type: "car_points" }, items)],
     ["draft_pick", "Opening Draft Pick", [1, 2, 3, 4, 5, 6].some((round) => canAddTradeItem(teamId, { type: "draft_pick", round }, items))],
+    ["rookie_draft_pick", "Rookie Draft Pick", [1, 2].some((round) => canAddTradeItem(teamId, { type: "rookie_draft_pick", round }, items))],
   ];
   return typeOptions.map(([value, label, enabled]) => `
     <option value="${value}" ${enabled ? "" : "disabled"}>${label}</option>
@@ -3491,14 +3493,14 @@ function renderTradeItemRow(side, item, teamId, items) {
       </div>
     `;
   }
-  if (item.type === "draft_pick" && !item.round) {
+  if (["draft_pick","rookie_draft_pick"].includes(item.type) && !item.round) {
     return `
       <div class="trade-builder-row pending" data-trade-side="${side}" data-trade-item-id="${item.id}">
-        <span>Opening Draft Pick:</span>
+        <span>${item.type === "rookie_draft_pick" ? "Rookie" : "Opening"} Draft Pick:</span>
         <select data-trade-pick>
           <option value="">Select round</option>
-          ${[1, 2, 3, 4, 5, 6].map((round) => `
-            <option value="${round}" ${canAddTradeItem(teamId, { type: "draft_pick", round }, siblingItems) ? "" : "disabled"}>${ordinal(round)} round</option>
+          ${(item.type === "rookie_draft_pick" ? [1,2] : [1, 2, 3, 4, 5, 6]).map((round) => `
+            <option value="${round}" ${canAddTradeItem(teamId, { type: item.type, round }, siblingItems) ? "" : "disabled"}>${ordinal(round)} round</option>
           `).join("")}
         </select>
         <button type="button" class="trade-remove-item" data-remove-trade-item aria-label="Remove ${sideLabel} item">x</button>
@@ -3520,7 +3522,7 @@ function renderTradeItemRow(side, item, teamId, items) {
       ? "Next training:"
       : item.type === "upgrade"
         ? ""
-        : "Opening Draft Pick:";
+        : item.type === "rookie_draft_pick" ? "Rookie Draft Pick:" : "Opening Draft Pick:";
   return `
     <div class="trade-builder-row complete" data-trade-side="${side}" data-trade-item-id="${item.id}">
       <span>${label || " "}</span>
@@ -3588,7 +3590,7 @@ function tradeItemsReady(items) {
     (item.type === "car_points" && Number.isInteger(item.points) && item.points > 0 && [0,1].includes(item.carIndex) && [0,1].includes(item.recipientCarIndex))
     || (item.type === "driver" && item.racerId)
     || (item.type === "training" && item.amount)
-    || (item.type === "draft_pick" && item.round)
+    || (["draft_pick","rookie_draft_pick"].includes(item.type) && item.round)
   ));
 }
 

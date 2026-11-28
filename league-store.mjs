@@ -1625,6 +1625,16 @@ export function createLeagueStore(path = ":memory:") {
       PRIMARY KEY (season, draft_type, original_team_id, round_number)
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS traded_rookie_draft_pick_rights (
+      season INTEGER NOT NULL,
+      original_team_id TEXT NOT NULL,
+      round_number INTEGER NOT NULL CHECK (round_number BETWEEN 1 AND 2),
+      owner_team_id TEXT NOT NULL,
+      trade_offer_id INTEGER REFERENCES trade_offers(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (season, original_team_id, round_number)
+    ) STRICT;
+
     CREATE TABLE IF NOT EXISTS traded_training_rights (
       week INTEGER NOT NULL,
       original_team_id TEXT NOT NULL,
@@ -2031,6 +2041,19 @@ export function createLeagueStore(path = ":memory:") {
       PRIMARY KEY (season, draft_type, original_team_id, round_number)
     ) STRICT`,
     ["season", "draft_type", "original_team_id", "round_number", "owner_team_id", "trade_offer_id", "created_at"],
+  );
+  repairTradeRightsForeignKey(
+    "traded_rookie_draft_pick_rights",
+    `CREATE TABLE traded_rookie_draft_pick_rights (
+      season INTEGER NOT NULL,
+      original_team_id TEXT NOT NULL,
+      round_number INTEGER NOT NULL CHECK (round_number BETWEEN 1 AND 2),
+      owner_team_id TEXT NOT NULL,
+      trade_offer_id INTEGER REFERENCES trade_offers(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (season, original_team_id, round_number)
+    ) STRICT`,
+    ["season","original_team_id","round_number","owner_team_id","trade_offer_id","created_at"],
   );
   repairTradeRightsForeignKey(
     "traded_training_rights",
@@ -2938,6 +2961,13 @@ export function createLeagueStore(path = ":memory:") {
       owner_team_id = excluded.owner_team_id,
       trade_offer_id = excluded.trade_offer_id,
       created_at = excluded.created_at
+  `);
+  const readRookieDraftPickRightsForSeason = database.prepare("SELECT * FROM traded_rookie_draft_pick_rights WHERE season = ? ORDER BY round_number, original_team_id");
+  const upsertRookieDraftPickRight = database.prepare(`
+    INSERT INTO traded_rookie_draft_pick_rights (season, original_team_id, round_number, owner_team_id, trade_offer_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(season, original_team_id, round_number) DO UPDATE SET
+      owner_team_id = excluded.owner_team_id, trade_offer_id = excluded.trade_offer_id, created_at = excluded.created_at
   `);
   const readTrainingRightsForWeek = database.prepare(`
     SELECT *
@@ -5568,7 +5598,8 @@ export function createLeagueStore(path = ":memory:") {
       throw new Error("There is no active rookie draft.");
     }
     const order = JSON.parse(state.order_json);
-    const teamId = order[state.current_pick - 1];
+    const round = Math.floor((state.current_pick - 1) / teams.length) + 1;
+    const teamId = draftPickOwner(order[state.current_pick - 1], round, season, "rookie");
     const candidate = readRookieDraftPool.all(rookieSource(season), season)
       .find((racer) => racer.id === racerId);
     if (!candidate) throw new Error("That rookie is not available.");
@@ -5643,7 +5674,9 @@ export function createLeagueStore(path = ":memory:") {
       };
     }
     repairEmptyRookieDraftPool(season, state);
-    const order = JSON.parse(state.order_json);
+    const order = JSON.parse(state.order_json).map((teamId,index) => (
+      draftPickOwner(teamId, Math.floor(index / teams.length) + 1, season, "rookie")
+    ));
     const releases = readRookieReleases.all(season);
     const initiationVotes = readRookieDraftInitiationVotes.all(season);
     const initiation = {
@@ -6240,6 +6273,14 @@ export function createLeagueStore(path = ":memory:") {
     return season + 1;
   }
 
+  function rookieDraftSeasonForTrade() {
+    const season = getActiveSeason();
+    const draft = readRookieDraftState.get(season);
+    return ["releases","complete"].includes(draft?.status)
+      || (!draft && countSeasonRaces.get(season).count >= SEASON_RACES)
+      ? season + 1 : season;
+  }
+
   function weeklyRightsForTeam(week, baseSlots, overrides, teamId) {
     const rights = [];
     for (const originalTeam of teams) {
@@ -6276,8 +6317,8 @@ export function createLeagueStore(path = ":memory:") {
     );
   }
 
-  function nextDraftPickRight(teamId, round, season = openingDraftSeasonForTrade()) {
-    const existing = readDraftPickRightsForSeason.all(season);
+  function nextDraftPickRight(teamId, round, season = openingDraftSeasonForTrade(), draftType = "opening") {
+    const existing = (draftType === "rookie" ? readRookieDraftPickRightsForSeason : readDraftPickRightsForSeason).all(season);
     const byOriginal = new Map(existing.map((row) => [
       `${row.original_team_id}:${row.round_number}`,
       row.owner_team_id,
@@ -6296,13 +6337,20 @@ export function createLeagueStore(path = ":memory:") {
       .find((right) => right.ownerTeamId === teamId) || null;
   }
 
-  function draftPickOwner(originalTeamId, round, season = getActiveSeason()) {
-    const right = readDraftPickRightsForSeason.all(season)
+  function draftPickOwner(originalTeamId, round, season = getActiveSeason(), draftType = "opening") {
+    const right = (draftType === "rookie" ? readRookieDraftPickRightsForSeason : readDraftPickRightsForSeason).all(season)
       .find((row) => row.original_team_id === originalTeamId && Number(row.round_number) === round);
     return right?.owner_team_id || originalTeamId;
   }
 
   function assertTradeAssetAvailable(teamId, item) {
+    if (item.type === "rookie_draft_pick") {
+      if (readRookieDraftState.get(getActiveSeason())?.status === "active") {
+        throw new Error("Rookie draft picks cannot be traded during an active rookie draft.");
+      }
+      if (item.season !== rookieDraftSeasonForTrade()) throw new Error("That rookie draft pick offer has expired.");
+      if (!nextDraftPickRight(teamId, item.round, item.season, "rookie")) throw new Error("That team does not own that rookie draft pick.");
+    }
     if (item.type === "car_points") {
       const car = readCar.get(teamId, item.carIndex);
       if (!car || car.total_points - car.speed - car.handling - car.durability < item.points) {
@@ -6383,11 +6431,11 @@ export function createLeagueStore(path = ":memory:") {
     deletePendingTeamCarUpgradeChoices.run(week, toTeamId);
   }
 
-  function transferDraftPickRight(fromTeamId, toTeamId, round, tradeOfferId, now) {
-    const season = openingDraftSeasonForTrade();
-    const right = nextDraftPickRight(fromTeamId, round, season);
+  function transferDraftPickRight(fromTeamId, toTeamId, round, tradeOfferId, now, draftType = "opening", targetSeason) {
+    const season = draftType === "rookie" ? targetSeason : openingDraftSeasonForTrade();
+    const right = nextDraftPickRight(fromTeamId, round, season, draftType);
     if (!right) throw new Error("A traded draft pick is no longer available.");
-    upsertDraftPickRight.run(
+    (draftType === "rookie" ? upsertRookieDraftPickRight : upsertDraftPickRight).run(
       season,
       right.originalTeamId,
       round,
@@ -6436,6 +6484,9 @@ export function createLeagueStore(path = ":memory:") {
       if (item.type === "draft_pick") {
         transferDraftPickRight(fromTeamId, toTeamId, item.round, tradeOfferId, now);
       }
+      if (item.type === "rookie_draft_pick") {
+        transferDraftPickRight(fromTeamId, toTeamId, item.round, tradeOfferId, now, "rookie", item.season);
+      }
     }
   }
 
@@ -6462,6 +6513,11 @@ export function createLeagueStore(path = ":memory:") {
         return { type:"car_points", points, carIndex, recipientCarIndex };
       }
       if (item?.type === "upgrade") throw new Error("Weekly car upgrades have been replaced by car points.");
+      if (item?.type === "rookie_draft_pick") {
+        const round = Number(item.round);
+        if (!Number.isInteger(round) || round < 1 || round > 2) throw new Error("Rookie draft picks must choose round 1 or 2.");
+        return { type:"rookie_draft_pick", round, season:rookieDraftSeasonForTrade() };
+      }
       if (item?.type === "draft_pick") {
         const round = Number(item.round);
         if (!Number.isInteger(round) || round < 1 || round > 6) {
@@ -6479,6 +6535,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function tradeItemKey(item) {
+    if (item.type === "rookie_draft_pick") return `rookie_draft_pick:${item.round}`;
     if (item.type === "car_points") return `car_points:${item.carIndex}`;
     if (item.type === "driver") return `driver:${item.racerId}`;
     if (item.type === "training") return `training:${item.amount}`;
@@ -6488,6 +6545,7 @@ export function createLeagueStore(path = ":memory:") {
   }
 
   function tradeItemLabel(item, racers = new Map()) {
+    if (item.type === "rookie_draft_pick") return `Season ${item.season} Rookie Draft Pick: ${ordinal(item.round)} round`;
     if (item.type === "car_points") return `${item.points} car point(s): Car ${item.carIndex + 1} to Car ${item.recipientCarIndex + 1}`;
     if (item.type === "driver") return `Driver: ${racers.get(item.racerId)?.name || item.racerId}`;
     if (item.type === "training") return `Next training: ${item.amount === "both" ? "Both" : "Single"}`;
@@ -6529,6 +6587,7 @@ export function createLeagueStore(path = ":memory:") {
   function tradableItemKeysByTeam() {
     const developmentWeek = currentDevelopmentWeekKey();
     const draftSeason = openingDraftSeasonForTrade();
+    const rookieSeason = rookieDraftSeasonForTrade();
     return Object.fromEntries(teams.map((team) => {
       const keys = [];
       if (trainingRightsForTeam(team.id, developmentWeek).length >= 1) keys.push("training:single");
@@ -6539,6 +6598,11 @@ export function createLeagueStore(path = ":memory:") {
       }
       for (let round = 1; round <= 6; round += 1) {
         if (nextDraftPickRight(team.id, round, draftSeason)) keys.push(`draft_pick:${round}`);
+      }
+      if (readRookieDraftState.get(getActiveSeason())?.status !== "active") {
+        for (const round of [1,2]) {
+          if (nextDraftPickRight(team.id, round, rookieSeason, "rookie")) keys.push(`rookie_draft_pick:${round}`);
+        }
       }
       return [team.id, keys];
     }));
